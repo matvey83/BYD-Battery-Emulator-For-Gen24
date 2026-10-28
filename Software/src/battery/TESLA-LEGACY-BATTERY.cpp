@@ -494,6 +494,7 @@ void TeslaLegacyBattery::transmit_can(unsigned long currentMillis) {
 // full 96S one (its real ceiling is 403.2 V).
 void TeslaLegacyBattery::apply_series_limits(uint16_t series_cells) {
   datalayer.battery.info.number_of_cells = series_cells;
+  datalayer.battery.info.module_grouping = tesla_module_grouping(TeslaPackFamily::LegacySX, series_cells);
   datalayer.battery.info.min_design_voltage_dV = (uint32_t)series_cells * MIN_CELL_VOLTAGE_MV / 100;
   datalayer.battery.info.max_design_voltage_dV = (uint32_t)series_cells * MAX_CELL_VOLTAGE_MV / 100;
   logging.printf("Tesla legacy: %u series bricks -> pack limits %u.%u-%u.%u V\n", series_cells,
@@ -505,6 +506,7 @@ void TeslaLegacyBattery::setup(void) {  // Performs one time setup at startup
   strncpy(datalayer.system.info.battery_protocol, Name, 63);
   datalayer.system.info.battery_protocol[63] = '\0';
   datalayer.battery.info.number_of_cells = 14;
+  datalayer.battery.info.module_grouping = ModuleGrouping();  // placeholder count, grouping unknown
   // Defaults until the brick count is known: apply_series_limits() replaces them
   // after the first full 0x6F2 cycle (a few seconds). Until then a pack below
   // 300 V simply can't discharge yet; cell limits apply throughout.

@@ -42,7 +42,9 @@ void append_uint(String& out, unsigned value, const char* suffix) {
    not read yet are left out of both), n = cells configured, a = the pack reports balancing active,
    p = the pack reports balancing pending. A BMS can flag cells for balancing long before it
    actually bleeds them; while the aggregate status reports that waiting state, the page labels the
-   flagged bars as pending instead. The same text goes into the page and answers its polls. */
+   flagged bars as pending instead. m = bricks per module, left out unless the battery integration
+   knows the grouping (see module_grouping.h). The same text goes into the page and answers its
+   polls. */
 void append_cell_json(String& out, const DATALAYER_BATTERY_TYPE& pack) {
   const uint8_t cells = pack.info.number_of_cells;
   const char* separator = "";
@@ -69,7 +71,12 @@ void append_cell_json(String& out, const DATALAYER_BATTERY_TYPE& pack) {
   append_uint(out, cells, ",\"a\":");
   out += (pack.status.balancing_status == BALANCING_STATUS_ACTIVE) ? "1" : "0";
   out += ",\"p\":";
-  out += (pack.status.balancing_status == BALANCING_STATUS_BLOCKED) ? "1}" : "0}";
+  out += (pack.status.balancing_status == BALANCING_STATUS_BLOCKED) ? "1" : "0";
+  if (pack.info.module_grouping.known()) {
+    out += ",\"m\":";
+    pack.info.module_grouping.append_json(out);
+  }
+  out += "}";
 }
 
 // Page chrome. The More Battery Info link carries location.search along, so the pack selected here
@@ -135,7 +142,7 @@ Y.textContent=k?(j.p?'Pending':'Balancing'):j.a?'Balancing is active now!':'';
 Y.style.background=k?'#0ff':'#f90';Y.hidden=!Y.textContent;
 if(!d.length){p=-1;V.textContent='Value: ...';T.textContent=j.n?j.n+' cells configured, but cellvoltages not yet read':'Amount of cells unknown. Cellvoltages not yet read';return}
 const mn=Math.min(...d),mx=Math.max(...d),lo=mn-20,sc=180/(mx-mn+40);
-T.innerHTML='Min/Max: '+mn+'/'+mx+' mV<br>Delta: '+(mx-mn)+' mV'+(j.a?' (balancing now!)':'');
+T.innerHTML='Min/Max: '+mn+'/'+mx+' mV<br>Delta: '+(mx-mn)+' mV'+(j.a?' (balancing now!)':'')+(j.m?'<br>Modules: '+j.m.length+' ('+j.m.join(' / ')+' bricks)':'');
 d.forEach((mV,i)=>{
 const e=document.createElement('div'),r=document.createElement('div');
 e.className='cell';

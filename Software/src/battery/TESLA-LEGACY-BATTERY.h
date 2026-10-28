@@ -4,6 +4,7 @@
 #include "CanBattery.h"
 #include "TESLA-BATTERY.h"
 #include "TESLA-HTML.h"
+#include "TESLA-MODULES.h"
 
 class TeslaLegacyBattery : public CanBattery {
  public:

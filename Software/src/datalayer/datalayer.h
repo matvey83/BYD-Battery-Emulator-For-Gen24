@@ -3,6 +3,7 @@
 
 #include "../devboard/utils/types.h"
 #include "../system_settings.h"
+#include "module_grouping.h"
 
 /*Note when editing this file. Order of datatypes matter heavily to keep padding and flash size in check*/
 
@@ -54,6 +55,8 @@ struct DATALAYER_BATTERY_INFO_TYPE {
   /** uint8_t */
   /** Total number of cells in the pack */
   uint8_t number_of_cells = 0;
+  /** How the cells are grouped into modules, if the battery integration knows. See module_grouping.h */
+  ModuleGrouping module_grouping;
 
   /** Other */
   /** Chemistry of the pack. Autodetect, or force specific chemistry */

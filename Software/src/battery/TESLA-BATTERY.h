@@ -4,6 +4,7 @@
 #include "../datalayer/datalayer_extended.h"
 #include "CanBattery.h"
 #include "TESLA-HTML.h"
+#include "TESLA-MODULES.h"
 
 // Little-endian (Intel) signal from an 8 byte CAN payload: start bit and length as in a DBC "start|len@1+"
 inline uint32_t tesla_le_bits(const uint8_t* data, uint8_t start_bit, uint8_t length) {
@@ -142,6 +143,13 @@ class TeslaBattery : public CanBattery {
   // OBSOLETE fallback: total capacity from the user selected GTW pack energy (50/74/62/100 kWh), set once in setup().
   // Used only when the pack reports no plausible capacity when new (0x392/0x292, legacy S/X packs report none).
   uint32_t fallback_total_capacity_Wh = 0;
+
+  // Call whenever number_of_cells changes
+  void update_module_grouping() {
+    datalayer_battery->info.module_grouping =
+        tesla_module_grouping(TeslaPackFamily::Model3YClass, datalayer_battery->info.number_of_cells,
+                              user_selected_tesla_GTW_chassisType <= 1);  // 0 Model S, 1 Model X
+  }
 
   // Per-instance extended data for the "More Battery Info" webserver page.
   // Points at datalayer_extended.tesla for the main battery, or datalayer_extended.tesla_2
