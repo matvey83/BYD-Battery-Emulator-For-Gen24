@@ -4,6 +4,7 @@
 #include "../datalayer/datalayer_extended.h"
 #include "CanBattery.h"
 #include "TESLA-HTML.h"
+#include "TESLA-MODULES.h"
 
 // 0x7FF gateway config, "Gen3" vehicles only, not applicable to Gen2 "classic" Model S and Model X
 // These are user configurable from the Webserver UI
@@ -58,6 +59,13 @@ class TeslaBattery : public CanBattery {
 
  private:
   TeslaHtmlRenderer renderer;
+
+  // Call whenever number_of_cells changes
+  void update_module_grouping() {
+    datalayer_battery->info.module_grouping =
+        tesla_module_grouping(TeslaPackFamily::Model3YClass, datalayer_battery->info.number_of_cells,
+                              user_selected_tesla_GTW_chassisType <= 1);  // 0 Model S, 1 Model X
+  }
 
   // Per-instance extended data for the "More Battery Info" webserver page.
   // Points at datalayer_extended.tesla for the main battery, or datalayer_extended.tesla_2
