@@ -6,20 +6,28 @@
 // Bricks per module for the Tesla packs. Returns unknown unless the brick count
 // is exactly one of the layouts below, so a partly counted pack gets no grouping.
 //
-// The order of the modules along the brick index is a symmetric guess (the two
-// end modules are the smaller ones). The sizes come from teardowns and logs.
+// Two things below are NOT confirmed:
+// 1. The order of the modules along the brick index is a guess. Only the sizes
+//    are sourced (teardowns, logs); the tables put the smaller end modules first
+//    and last (symmetric). A real pack may differ, then only the order changes.
+// 2. The legacy S/X 84 brick layout (14 modules of 6) is derived from "6 bricks
+//    per module", there is no capture of such a pack yet.
 enum class TeslaPackFamily : uint8_t {
   Model3YClass,  // TeslaBattery: Model 3/Y. The 2021+ Model S/X on the same BMS is not supported.
   LegacySX,      // TeslaLegacyBattery: Model S/X 2012-2020
 };
 
 inline ModuleGrouping tesla_module_grouping(TeslaPackFamily family, uint16_t bricks, bool sx_chassis = false) {
+  // Sizes sourced, module order guessed (see 1. above).
   static constexpr uint8_t SIZES_96[] = {23, 25, 25, 23};
-  static constexpr uint8_t SIZES_106[] = {25, 28, 28, 25};  // LFP
-  static constexpr uint8_t SIZES_108[] = {26, 28, 28, 26};  // LFP
-  // Legacy S/X modules hold 6 bricks each. 96 bricks is 16 modules. 84 bricks is
-  // derived (14 modules): no capture of an 84 brick pack has been seen yet.
+  // LFP. Sizes sourced, module order guessed.
+  static constexpr uint8_t SIZES_106[] = {25, 28, 28, 25};
+  // LFP. Sizes sourced, module order guessed.
+  static constexpr uint8_t SIZES_108[] = {26, 28, 28, 26};
+  // Legacy S/X modules hold 6 bricks each, all equal, so the order does not matter.
+  // 96 bricks is 16 modules.
   static constexpr uint8_t SIZES_LEGACY_96[] = {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6};
+  // DERIVED, NOT SEEN ON A REAL PACK (see 2. above): 84 bricks is 14 modules of 6.
   static constexpr uint8_t SIZES_LEGACY_84[] = {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6};
 
   if (family == TeslaPackFamily::LegacySX) {
