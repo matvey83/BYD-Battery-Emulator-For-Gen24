@@ -83,7 +83,7 @@ void append_cell_json(String& out, const DATALAYER_BATTERY_TYPE& pack) {
 // Page chrome. The More Battery Info link carries location.search along, so the pack selected here
 // stays selected there; the browser assembles it, nothing is built on the ESP.
 const char page_head[] =
-    INDEX_HTML_SUBPAGE_STYLE R"html(.container{display:flex;flex-wrap:wrap;justify-content:space-around}
+    INDEX_HTML_SUBPAGE_STYLE R"html(.container{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
 .cell{padding:10px;border:1px solid #fff;text-align:center}
 .lv{color:red}
 #graph{display:flex;align-items:flex-end;height:200px;border:1px solid #ccc;cursor:pointer;touch-action:pan-y}
