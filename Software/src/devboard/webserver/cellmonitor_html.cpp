@@ -3,6 +3,7 @@
 #include "../../battery/BATTERIES.h"
 #include "../../datalayer/datalayer.h"
 #include "../../lib/ESP32Async-ESPAsyncWebServer/src/ESPAsyncWebServer.h"
+#include "cellmonitor_js.h"
 #include "index_html.h"
 
 namespace {
@@ -131,7 +132,9 @@ const char panel[] =
 // When the pack reports its module grouping (m) and the modules add up to exactly the cells drawn,
 // an empty column as wide as a bar (.gap) is left at every module boundary. B holds the bars by
 // cell number, since the graph's children no longer are, and Q maps each column of the graph to
-// its cell, or to -1 for a gap. Without a grouping Q is one column per cell, as before.
+// its cell, or to -1 for a gap. Without a grouping Q is one column per cell, as before. The pure
+// part of this (the Modules row text, the columns, the pointer lookup) is in cellmonitor_js.h,
+// where the unit tests can run it.
 //
 // H(cell, selected) holds both colour schemes, so the bars take their initial colour from it too. A
 // selected bar turns white whatever its colour: the lighter cyan a balancing bar used to get was
@@ -148,12 +151,12 @@ Y.textContent=k?(j.p?'Pending':'Balancing'):j.a?'Balancing is active now!':'';
 Y.style.background=k?'#0ff':'#f90';Y.hidden=!Y.textContent;
 if(!d.length){p=-1;V.textContent='Value: ...';T.textContent=j.n?j.n+' cells configured, but cellvoltages not yet read':'Amount of cells unknown. Cellvoltages not yet read';return}
 const mn=Math.min(...d),mx=Math.max(...d),lo=mn-20,sc=180/(mx-mn+40);
-T.innerHTML='Min/Max: '+mn+'/'+mx+' mV<br>Delta: '+(mx-mn)+' mV'+(j.a?' (balancing now!)':'')+(j.m?'<br>Modules: '+j.m.length+' ('+j.m.join(' / ')+' bricks)':'');
-const m=j.m,s=m&&m.length>1&&m.reduce((a,x)=>a+x)==d.length&&m;
-let u=0,w=s?s[0]:-1;
-d.forEach((mV,i)=>{
-const e=document.createElement('div'),r=document.createElement('div');
-if(i==w){const x=document.createElement('div');x.className='gap';G.appendChild(x);Q.push(-1);w+=s[++u]}
+T.innerHTML='Min/Max: '+mn+'/'+mx+' mV<br>Delta: '+(mx-mn)+' mV'+(j.a?' (balancing now!)':'')+modulesRow(j.m);
+Q=columns(d.length,j.m);
+Q.forEach(i=>{
+const r=document.createElement('div');
+if(i<0){r.className='gap';G.appendChild(r);return}
+const mV=d[i],e=document.createElement('div');
 e.className='cell';
 e.innerHTML='<span'+(mV<3000?' class=lv>':'>')+'Cell '+(i+1)+'<br>'+mV+' mV</span>';
 e.onclick=e.onmouseover=()=>S(i);
@@ -161,12 +164,12 @@ r.className='bar';
 r.style.height=(mV-lo)*sc+20+'px';
 if(b[i])r.style.borderColor='#0ff';
 if(mV==mn||mV==mx){e.style.borderColor='red';r.style.borderColor='red'}
-G.appendChild(r);B.push(r);Q.push(i);C.appendChild(e);H(i,0)});
+G.appendChild(r);B[i]=r;C.appendChild(e);H(i,0)});
 p in d?S(p):(p=-1,V.textContent='Value: ...')},
 tick=()=>{clearTimeout(t);if(document.hidden)return;let w=5000;
 fetch(U,{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{draw(j);w=20000}).catch(()=>0)
 .then(()=>{P.style.opacity=w>5000?'':.5;clearTimeout(t);t=setTimeout(tick,w)})};
-G.onpointerdown=G.onpointermove=v=>{const i=Q[(v.clientX-G.getBoundingClientRect().left-G.clientLeft)/G.scrollWidth*Q.length|0];i>=0&&S(i)};
+G.onpointerdown=G.onpointermove=v=>{const i=cellAt(Q,(v.clientX-G.getBoundingClientRect().left-G.clientLeft)/G.scrollWidth);i>=0&&S(i)};
 document.addEventListener('visibilitychange',tick);
 draw(J);t=setTimeout(tick,20000)
 </script>)html";
@@ -203,6 +206,9 @@ String cellmonitor_processor(const String& var, unsigned selected) {
   append_cell_json(content, pack);
   content += ";</script>";
 
+  content += "<script>";
+  content += cellmonitor_logic_js;
+  content += "</script>";
   content += page_script;
   return content;
 }
