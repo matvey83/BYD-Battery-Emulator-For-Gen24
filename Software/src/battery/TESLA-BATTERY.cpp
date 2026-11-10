@@ -2688,108 +2688,28 @@ void TeslaBattery::printFaultCodesIfActive() {
   printDebugIfActive(battery_fcCtrCloseFailed, "fcCtrCloseFailed is active");
   printDebugIfActive(battery_shuntThermistorMia, "shuntThermistorMia is active");
   */
-  // 0x320 800 BMS_alertMatrix
-  //TODO: This function should later be removed in favour of the webserver diagnostics
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[1], "BMS_a017");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[2], "BMS_a018");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[3], "BMS_a019");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[4], "BMS_a021");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[5], "BMS_a022");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[6], "BMS_a023");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[7], "BMS_a024");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[8], "BMS_a025");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[9], "BMS_a026");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[10], "BMS_a034");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[11], "BMS_a035");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[12], "BMS_a036");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[13], "BMS_a037");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[14], "BMS_a039");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[15], "BMS_a041");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[16], "BMS_a042");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[17], "BMS_a043");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[18], "BMS_a044");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[19], "BMS_a045");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[20], "BMS_a046");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[21], "BMS_a047");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[22], "BMS_a048");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[23], "BMS_a050");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[24], "BMS_a051");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[25], "BMS_a052");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[26], "BMS_a053");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[27], "BMS_a054");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[29], "BMS_a059");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[30], "BMS_a060");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[31], "BMS_a061");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[32], "BMS_a062");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[33], "BMS_a063");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[34], "BMS_a064");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[35], "BMS_a069");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[36], "BMS_a071");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[37], "BMS_a075");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[38], "BMS_a076");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[39], "BMS_a077");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[40], "BMS_a081");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[41], "BMS_a082");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[42], "BMS_a083");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[43], "BMS_a084");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[44], "BMS_a087");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[45], "BMS_a088");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[46], "BMS_a089");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[47], "BMS_a090");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[48], "BMS_a091");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[49], "BMS_a092");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[50], "BMS_a094");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[51], "BMS_a099");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[52], "BMS_a105");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[53], "BMS_a106");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[54], "BMS_a107");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[55], "BMS_a121");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[56], "BMS_a122");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[57], "BMS_a123");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[59], "BMS_a127");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[60], "BMS_a128");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[61], "BMS_a129");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[62], "BMS_a130");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[63], "BMS_a131");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[64], "BMS_a132");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[65], "BMS_a134");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[67], "BMS_a136");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[68], "BMS_a137");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[70], "BMS_a139");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[71], "BMS_a141");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[73], "BMS_a144");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[74], "INFO: BMS_a145");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[75], "BMS_a146");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[76], "BMS_a149");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[77], "BMS_a151");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[79], "BMS_a156");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[80], "BMS_a157");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[81], "BMS_a158");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[82], "BMS_a159");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[83], "BMS_a161");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[84], "BMS_a162");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[85], "BMS_a163");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[86], "BMS_a164");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[87], "BMS_a165");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[88], "BMS_a166");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[89], "BMS_a167");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[90], "BMS_a168");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[91], "BMS_a169");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[92], "BMS_a170");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[93], "BMS_a171");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[95], "BMS_a174");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[96], "BMS_a176");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[98], "BMS_a179");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[99], "BMS_a180");
-  // BMS alerts added from tesla-m3-pack-findings (firmware 2019.20.4.2)
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[0], "BMS_a001");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[28], "BMS_a055");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[58], "BMS_a126");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[66], "BMS_a135");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[72], "BMS_a143");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[78], "BMS_a155");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[94], "BMS_a173");
-  printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[97], "BMS_a178");
+  // 0x320 BMS alerts, same text as the old calls. Index order, like PCS and CP below.
+  // BMS_a138 has no line: that call did not exist.
+  static const char* bmsAlertMessage[100] = {
+      "BMS_a001", "BMS_a017", "BMS_a018", "BMS_a019", "BMS_a021",       "BMS_a022", "BMS_a023", "BMS_a024", "BMS_a025",
+      "BMS_a026", "BMS_a034", "BMS_a035", "BMS_a036", "BMS_a037",       "BMS_a039", "BMS_a041", "BMS_a042", "BMS_a043",
+      "BMS_a044", "BMS_a045", "BMS_a046", "BMS_a047", "BMS_a048",       "BMS_a050", "BMS_a051", "BMS_a052", "BMS_a053",
+      "BMS_a054", "BMS_a055", "BMS_a059", "BMS_a060", "BMS_a061",       "BMS_a062", "BMS_a063", "BMS_a064", "BMS_a069",
+      "BMS_a071", "BMS_a075", "BMS_a076", "BMS_a077", "BMS_a081",       "BMS_a082", "BMS_a083", "BMS_a084", "BMS_a087",
+      "BMS_a088", "BMS_a089", "BMS_a090", "BMS_a091", "BMS_a092",       "BMS_a094", "BMS_a099", "BMS_a105", "BMS_a106",
+      "BMS_a107", "BMS_a121", "BMS_a122", "BMS_a123", "BMS_a126",       "BMS_a127", "BMS_a128", "BMS_a129", "BMS_a130",
+      "BMS_a131", "BMS_a132", "BMS_a134", "BMS_a135", "BMS_a136",       "BMS_a137",
+      nullptr,  // BMS_a138 was not printed
+      "BMS_a139", "BMS_a141", "BMS_a143", "BMS_a144", "INFO: BMS_a145", "BMS_a146", "BMS_a149", "BMS_a151", "BMS_a155",
+      "BMS_a156", "BMS_a157", "BMS_a158", "BMS_a159", "BMS_a161",       "BMS_a162", "BMS_a163", "BMS_a164", "BMS_a165",
+      "BMS_a166", "BMS_a167", "BMS_a168", "BMS_a169", "BMS_a170",       "BMS_a171", "BMS_a173", "BMS_a174", "BMS_a176",
+      "BMS_a178", "BMS_a179", "BMS_a180",
+  };
+  for (int i = 0; i < 100; i++) {
+    if (bmsAlertMessage[i] != nullptr) {
+      printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[i], bmsAlertMessage[i]);
+    }
+  }
   printFaultCodesPcsCp();
 }
 
