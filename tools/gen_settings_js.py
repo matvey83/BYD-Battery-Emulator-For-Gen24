@@ -56,6 +56,7 @@ def render_header(raw: bytes, variant: str) -> str:
         "\n"
         "#include <Arduino.h>\n"
         "\n"
+        "#define SETTINGS_JS_EMBEDDED\n"
         "// clang-format off\n"
         "static const uint8_t SETTINGS_JS_GZ[] PROGMEM = {\n"
         f"{body}\n"
