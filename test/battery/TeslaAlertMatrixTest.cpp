@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <random>
+#include <string>
 #include <vector>
 
 #include "../../Software/src/battery/TESLA-BATTERY.h"
@@ -346,9 +347,9 @@ CAN_frame AlertFrame(uint32_t id, const uint8_t* data) {
   return frame;
 }
 
-void ExpectSame(const bool* got, const bool* expected, int count, const char* which) {
+void ExpectSame(const uint8_t* packed, const bool* expected, int count, const char* which) {
   for (int i = 0; i < count; i++) {
-    EXPECT_EQ(got[i], expected[i]) << which << " index " << i;
+    EXPECT_EQ(teslaAlertGet(packed, i), expected[i]) << which << " index " << i;
   }
 }
 
@@ -497,14 +498,14 @@ TEST_F(TeslaAlertMatrixTest, SocChangeLatchesFromMux2Byte3Bit4) {
   data[3] = 0x10;  // bit 4, SOC change. Bit 2 (CAC change) stays clear.
   pack_->handle_incoming_can_frame(AlertFrame(0x320, data));
   pack_->update_values();
-  EXPECT_TRUE(datalayer_extended.tesla.BMS_alertMatrixActive[74]);
-  EXPECT_FALSE(datalayer_extended.tesla.BMS_alertMatrixActive[72]);
+  EXPECT_TRUE(teslaAlertGet(datalayer_extended.tesla.BMS_alertMatrixActive, 74));
+  EXPECT_FALSE(teslaAlertGet(datalayer_extended.tesla.BMS_alertMatrixActive, 72));
   EXPECT_EQ(get_event_pointer(EVENT_BATTERY_SOC_RECALIBRATION)->state, EVENT_STATE_ACTIVE_LATCHED);
 
   data[3] = 0;
   pack_->handle_incoming_can_frame(AlertFrame(0x320, data));
   pack_->update_values();
-  EXPECT_FALSE(datalayer_extended.tesla.BMS_alertMatrixActive[74]);
+  EXPECT_FALSE(teslaAlertGet(datalayer_extended.tesla.BMS_alertMatrixActive, 74));
   EXPECT_EQ(get_event_pointer(EVENT_BATTERY_SOC_RECALIBRATION)->state, EVENT_STATE_ACTIVE_LATCHED);
 }
 
@@ -523,7 +524,7 @@ TEST_F(TeslaAlertMatrixTest, EcuResetBlockedFollowsMux2Byte7Bit7) {
   blocked->handle_incoming_can_frame(AlertFrame(0x320, data));
   blocked->reset_BMS();
   blocked->update_values();
-  EXPECT_TRUE(datalayer_extended.tesla.BMS_alertMatrixActive[99]);
+  EXPECT_TRUE(teslaAlertGet(datalayer_extended.tesla.BMS_alertMatrixActive, 99));
   EXPECT_FALSE(ResetRequestWasSent(blocked));
   delete blocked;
 }
@@ -538,8 +539,8 @@ TEST_F(TeslaAlertMatrixTest, SecondBatteryWritesItsOwnMatrix) {
   data[0] = static_cast<uint8_t>(data[0] | 0x10);  // BMS_a001, mux 0 byte 0 bit 4
   Shadow shadow;
   Feed(&second, &datalayer_extended.tesla_2, &shadow, 0x320, data);
-  EXPECT_FALSE(datalayer_extended.tesla.BMS_alertMatrixActive[0]);
-  EXPECT_TRUE(datalayer_extended.tesla_2.BMS_alertMatrixActive[0]);
+  EXPECT_FALSE(teslaAlertGet(datalayer_extended.tesla.BMS_alertMatrixActive, 0));
+  EXPECT_TRUE(teslaAlertGet(datalayer_extended.tesla_2.BMS_alertMatrixActive, 0));
 }
 
 TEST_F(TeslaAlertMatrixTest, LoggedAlertFramesMatchTheOldDecode) {
@@ -564,6 +565,95 @@ TEST_F(TeslaAlertMatrixTest, LoggedAlertFramesMatchTheOldDecode) {
     }
   }
   EXPECT_GT(alert_frames, 0);
+}
+
+void ExpectOnlyThisBit(uint8_t* packed, int count, int index) {
+  teslaAlertSet(packed, index, true);
+  for (int i = 0; i < count; i++) {
+    EXPECT_EQ(teslaAlertGet(packed, i), i == index) << count << " alerts, set " << index << ", read " << i;
+  }
+  teslaAlertSet(packed, index, false);
+  EXPECT_FALSE(teslaAlertGet(packed, index));
+}
+
+// Packing itself: every index, then the byte edges and the short last bytes.
+TEST(TeslaAlertPack, EveryIndexSetsAndClearsWithoutTouchingItsNeighbors) {
+  uint8_t bms[(100 + 7) / 8] = {};
+  uint8_t pcs[(94 + 7) / 8] = {};
+  uint8_t cp[(96 + 7) / 8] = {};
+  for (int i = 0; i < 100; i++) {
+    ExpectOnlyThisBit(bms, 100, i);
+  }
+  for (int i = 0; i < 94; i++) {
+    ExpectOnlyThisBit(pcs, 94, i);
+  }
+  for (int i = 0; i < 96; i++) {
+    ExpectOnlyThisBit(cp, 96, i);
+  }
+
+  for (int i = 0; i < 8; i++) {
+    teslaAlertSet(bms, i, true);
+  }
+  EXPECT_EQ(bms[0], 0xFF);
+  teslaAlertSet(bms, 7, false);
+  EXPECT_EQ(bms[0], 0x7F);
+  EXPECT_FALSE(teslaAlertGet(bms, 7));
+  EXPECT_TRUE(teslaAlertGet(bms, 6));
+  EXPECT_FALSE(teslaAlertGet(bms, 8));
+
+  // Index 99 is bit 3 of the last BMS byte. Bits 4..7 of that byte are not alerts.
+  std::memset(bms, 0, sizeof(bms));
+  teslaAlertSet(bms, 96, true);
+  teslaAlertSet(bms, 99, true);
+  EXPECT_EQ(bms[12], 0x09);
+  teslaAlertSet(bms, 99, false);
+  EXPECT_EQ(bms[12], 0x01);
+  EXPECT_TRUE(teslaAlertGet(bms, 96));
+  EXPECT_FALSE(teslaAlertGet(bms, 99));
+
+  // PCS stops at 93, which is bit 5 of byte 11. The two bits above it stay clear.
+  teslaAlertSet(pcs, 93, true);
+  EXPECT_EQ(pcs[11], 0x20);
+  EXPECT_EQ(pcs[11] & 0xC0, 0);
+  teslaAlertSet(pcs, 93, false);
+  EXPECT_EQ(pcs[11], 0);
+
+  // CP stops on a byte boundary. Index 95 is the top bit of byte 11.
+  teslaAlertSet(cp, 88, true);
+  teslaAlertSet(cp, 95, true);
+  EXPECT_EQ(cp[11], 0x81);
+  teslaAlertSet(cp, 95, false);
+  EXPECT_EQ(cp[11], 0x01);
+  EXPECT_TRUE(teslaAlertGet(cp, 88));
+  EXPECT_FALSE(teslaAlertGet(cp, 95));
+}
+
+TEST_F(TeslaAlertMatrixTest, DetailPageReadsPackedAlertBits) {
+  static char manufacture_date[] = "";
+  datalayer_extended.tesla.battery_manufactureDate = manufacture_date;
+  const auto page = [&]() {
+    return pack_->get_status_renderer().get_status_html().str();
+  };
+
+  EXPECT_NE(page().find("Active Faults: 0"), std::string::npos);
+  EXPECT_EQ(page().find("data-dtc-code"), std::string::npos);
+
+  teslaAlertSet(datalayer_extended.tesla.BMS_alertMatrixActive, 0, true);
+  teslaAlertSet(datalayer_extended.tesla.BMS_alertMatrixActive, 7, true);
+  teslaAlertSet(datalayer_extended.tesla.BMS_alertMatrixActive, 8, true);
+  teslaAlertSet(datalayer_extended.tesla.BMS_alertMatrixActive, 99, true);
+  teslaAlertSet(datalayer_extended.tesla.PCS_alertMatrixActive, 0, true);
+  teslaAlertSet(datalayer_extended.tesla.PCS_alertMatrixActive, 93, true);
+  teslaAlertSet(datalayer_extended.tesla.CP_alertMatrixActive, 95, true);
+
+  const std::string html = page();
+  EXPECT_NE(html.find("Active Faults: 7"), std::string::npos);
+  for (const char* code : {"100", "107", "108", "199", "200", "293", "395"}) {
+    EXPECT_NE(html.find(std::string("data-dtc-code='") + code + "'"), std::string::npos) << code;
+  }
+  EXPECT_EQ(html.find("data-dtc-code='106'"), std::string::npos);
+  EXPECT_EQ(html.find("data-dtc-code='109'"), std::string::npos);
+  EXPECT_EQ(html.find("data-dtc-code='294'"), std::string::npos);
 }
 
 }  // namespace

@@ -21,12 +21,13 @@ struct TeslaAlertBit {
   uint8_t bit;
 };
 
-template <size_t N>
-void applyAlertMatrix(bool (&active)[N], const TeslaAlertBit (&bits)[N], const uint8_t* data) {
+template <size_t N, size_t Bytes>
+void applyAlertMatrix(uint8_t (&active)[Bytes], const TeslaAlertBit (&bits)[N], const uint8_t* data) {
+  static_assert(Bytes == (N + 7) / 8, "alert pack size");
   const uint8_t frame_mux = data[0] & 0x0F;
   for (size_t i = 0; i < N; i++) {
     if (bits[i].mux == frame_mux) {
-      active[i] = (data[bits[i].byte_index] >> bits[i].bit) & 0x01;
+      teslaAlertSet(active, static_cast<int>(i), (data[bits[i].byte_index] >> bits[i].bit) & 0x01);
     }
   }
 }
@@ -2707,7 +2708,7 @@ void TeslaBattery::printFaultCodesIfActive() {
   };
   for (int i = 0; i < 100; i++) {
     if (bmsAlertMessage[i] != nullptr) {
-      printDebugIfActive(datalayer_tesla->BMS_alertMatrixActive[i], bmsAlertMessage[i]);
+      printDebugIfActive(teslaAlertGet(datalayer_tesla->BMS_alertMatrixActive, i), bmsAlertMessage[i]);
     }
   }
   printFaultCodesPcsCp();
@@ -2719,12 +2720,12 @@ void TeslaBattery::printFaultCodesPcsCp() {
   // human-readable names are no longer stored on the ESP32 (they live in the GitHub DTC JSON,
   // web_data/dtc/tesla_model3y_dtc.json); look the printed code up there, e.g. "PCS12" / "CP7".
   for (int i = 0; i < 94; i++) {
-    if (datalayer_tesla->PCS_alertMatrixActive[i]) {
+    if (teslaAlertGet(datalayer_tesla->PCS_alertMatrixActive, i)) {
       logging.printf("ERROR: Tesla alert PCS%d active\n", i);
     }
   }
   for (int i = 0; i < 96; i++) {
-    if (datalayer_tesla->CP_alertMatrixActive[i]) {
+    if (teslaAlertGet(datalayer_tesla->CP_alertMatrixActive, i)) {
       logging.printf("ERROR: Tesla alert CP%d active\n", i);
     }
   }
