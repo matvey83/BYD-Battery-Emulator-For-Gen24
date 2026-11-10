@@ -958,8 +958,10 @@ class TeslaBattery : public CanBattery {
   bool battery_shuntThermistorMia = false;
   */
   // Read after the 0x320 handler has stored the bit. Same moment the old members were read.
-  bool bmsSocChangeAlert() const { return datalayer_tesla->BMS_alertMatrixActive[kBmsAlertSocChange]; }
-  bool bmsEcuResetBlocked() const { return datalayer_tesla->BMS_alertMatrixActive[kBmsAlertEcuResetBlocked]; }
+  bool bmsSocChangeAlert() const { return teslaAlertGet(datalayer_tesla->BMS_alertMatrixActive, kBmsAlertSocChange); }
+  bool bmsEcuResetBlocked() const {
+    return teslaAlertGet(datalayer_tesla->BMS_alertMatrixActive, kBmsAlertEcuResetBlocked);
+  }
 };
 
 #endif
