@@ -1496,3 +1496,184 @@ TEST_F(TeslaBatteryTest, NominalFullEnergyIsHeldDuringABurstAndUnknownAfter30Sec
     EXPECT_EQ(datalayer.battery.status.soh_pptt, 7442);
   }
 }
+
+// Detail-page string tables are indexed by the raw CAN field. The max is every bit of that field set (the mask in
+// handle_incoming_can_frame). A value past the table used to read off the end of it.
+TEST_F(TeslaBatteryTest, HtmlStringLookupsStayInsideTheTable) {
+  DATALAYER_INFO_TESLA& t = datalayer_extended.tesla;
+  memset(&t, 0, sizeof(t));
+
+  // The serial log uses the same two tables. Out of range stays "UNKNOWN", same as the old switches.
+  EXPECT_STREQ(getContactorText(0), "UNKNOWN(0)");
+  EXPECT_STREQ(getContactorText(5), "CLOSED");
+  EXPECT_STREQ(getContactorText(12), "UNKNOWN(12)");
+  EXPECT_STREQ(getContactorText(13), "UNKNOWN");
+  EXPECT_STREQ(getContactorText(15), "UNKNOWN");
+  EXPECT_STREQ(getContactorText(-1), "UNKNOWN");
+  EXPECT_STREQ(getContactorState(0), "SNA");
+  EXPECT_STREQ(getContactorState(7), "WELDED");
+  EXPECT_STREQ(getContactorState(11), "UNKNOWN(11)");
+  EXPECT_STREQ(getContactorState(12), "UNKNOWN");
+  EXPECT_STREQ(getContactorState(-1), "UNKNOWN");
+
+  auto expect = [&](std::initializer_list<const char*> rows) {
+    const std::string page = DetailPage(*pack_);
+    ASSERT_GT(page.size(), 100u);
+    for (const char* row : rows) {
+      EXPECT_NE(page.find(row), std::string::npos) << row;
+    }
+  };
+
+  // Index 0: the text a zeroed field has always shown.
+  t.BMS352_mux = false;
+  expect({
+      "<h4>HVIL Status: UNKNOWN or CONTACTORS OPEN</h4>",
+      "<h4>HVP Contactor State: UNKNOWN(0)</h4>",
+      "<h4>BMS Contactor State: SNA</h4>",
+      "<h4>Negative Contactor: SNA</h4>",
+      "<h4>Positive Contactor: SNA</h4>",
+      "<h4>Closing blocked: No</h4>",
+      "<h4>Pyrotest in progress: No</h4>",
+      "<h4>Contactors Open Now Requested: No</h4>",
+      "<h4>Contactors Open Requested: No</h4>",
+      "<h4>Contactors Request Status: NOT_ACTIVE</h4>",
+      "<h4>Contactors Reset Request Required: No</h4>",
+      "<h4>DC Link Allowed to Energize: No</h4>",
+      "<h4>Full Charge Complete: No</h4>",
+      "<h4>BMS State: STANDBY</h4>",
+      "<h4>BMS HV State: DOWN</h4>",
+      "<h4>BMS UI Charge Status: DISCONNECTED</h4>",
+      "<h4>Power Limit State: NOT_CALCULATED_FOR_DRIVE</h4>",
+      "<h4>Precharge Status: IDLE</h4>",
+      "<h4>12V Support Status: IDLE</h4>",
+      "<h4>HV Bus Discharge Status: IDLE</h4>",
+      "<h4>Main State: STANDBY</h4>",
+      "<h4>Sub State: PWR_UP_INIT</h4>",
+      "<h4>Precharge Rty Cnt: False</h4>",
+      "<h4>12V Support Rty Cnt: False</h4>",
+      "<h4>Discharge Rty Cnt: False</h4>",
+      "<h4>Precharge Restart Cnt: False</h4>",
+      "<h4>Initial Precharge Substate: PWR_UP_INIT</h4>",
+      "<h4>HVP_packCurrentMia: No</h4>",
+      "<h4>HVP_auxCurrentMia: No</h4>",
+      "<h4>HVP_currentSenseMia: No</h4>",
+  });
+  t.BMS352_mux = true;
+  expect({"<h4>Fully Charged: No</h4>"});
+
+  // In-range values, including the last entry of each table.
+  t.BMS352_mux = false;
+  t.hvil_status = 1;
+  t.packContactorSetState = 5;  // CLOSED, so the closing-blocked row keeps its suffix
+  t.BMS_contactorState = 6;
+  t.packContNegativeState = 1;
+  t.packContPositiveState = 11;
+  t.battery_packCtrsRequestStatus = 2;
+  t.BMS_state = 9;
+  t.BMS_hvState = 6;
+  t.BMS_uiChargeStatus = 5;
+  t.BMS_powerLimitState = 1;
+  t.PCS_dcdcPrechargeStatus = 2;
+  t.PCS_dcdc12VSupportStatus = 1;
+  t.PCS_dcdcHvBusDischargeStatus = 0;
+  t.PCS_dcdcMainState = 6;
+  t.PCS_dcdcSubState = 17;
+  t.PCS_dcdcInitialPrechargeSubState = 9;
+  t.PCS_dcdcPrechargeRtyCnt = 0;
+  t.PCS_dcdc12VSupportRtyCnt = 1;
+  t.PCS_dcdcDischargeRtyCnt = 0;
+  t.PCS_dcdcPrechargeRestartCnt = 1;
+  expect({
+      "<h4>HVIL Status: STATUS_OK</h4>",
+      "<h4>HVP Contactor State: CLOSED</h4>",
+      "<h4>BMS Contactor State: BLOCKED</h4>",
+      "<h4>Negative Contactor: OPEN</h4>",
+      "<h4>Positive Contactor: UNKNOWN(11)</h4>",
+      "<h4>Closing blocked: No (already CLOSED)</h4>",
+      "<h4>Contactors Request Status: COMPLETED</h4>",
+      "<h4>BMS State: SNA</h4>",
+      "<h4>BMS HV State: UP</h4>",
+      "<h4>BMS UI Charge Status: CHARGE_STOPPED</h4>",
+      "<h4>Power Limit State: CALCULATED_FOR_DRIVE</h4>",
+      "<h4>Precharge Status: FAULTED</h4>",
+      "<h4>12V Support Status: ACTIVE</h4>",
+      "<h4>HV Bus Discharge Status: IDLE</h4>",
+      "<h4>Main State: FAULTED</h4>",
+      "<h4>Sub State: NUM</h4>",
+      "<h4>Precharge Rty Cnt: False</h4>",
+      "<h4>12V Support Rty Cnt: True</h4>",
+      "<h4>Discharge Rty Cnt: False</h4>",
+      "<h4>Precharge Restart Cnt: True</h4>",
+      "<h4>Initial Precharge Substate: PCHG_ACTIVE</h4>",
+  });
+
+  // All-ones of each decoded width. In range keeps the table text. Past the table is UNKNOWN, and the page still renders.
+  t.hvil_status = 0x0F;                   // 4 bit, table has 16
+  t.packContNegativeState = 0x07;         // 3 bit, table has 12
+  t.packContPositiveState = 0x07;         // 3 bit, table has 12
+  t.packContactorSetState = 0x0F;         // 4 bit, table has 13
+  t.BMS_contactorState = 0x07;            // 3 bit, table has 7
+  t.BMS_state = 0x0F;                     // 4 bit, table has 10
+  t.BMS_hvState = 0x07;                   // 3 bit, table has 7
+  t.BMS_uiChargeStatus = 0x07;            // 3 bit, table has 6
+  t.BMS_powerLimitState = 0x01;           // 1 bit, table has 2
+  t.PCS_dcdcPrechargeStatus = 0x03;       // 2 bit, table has 3
+  t.PCS_dcdc12VSupportStatus = 0x03;      // 2 bit, table has 3
+  t.PCS_dcdcHvBusDischargeStatus = 0x03;  // 2 bit, table has 3
+  t.PCS_dcdcMainState = 0x0F;             // 4 bit, table has 7
+  t.PCS_dcdcSubState = 0x1F;              // 5 bit, table has 18
+  t.PCS_dcdcInitialPrechargeSubState = 0x1F;
+  t.battery_packCtrsRequestStatus = 0x03;  // 2 bit, table has 3
+  t.PCS_dcdcPrechargeRtyCnt = 0x07;        // 3 bit, False/True table
+  t.PCS_dcdc12VSupportRtyCnt = 0x0F;       // 4 bit, False/True table
+  t.PCS_dcdcDischargeRtyCnt = 0x0F;        // 4 bit, False/True table
+  t.PCS_dcdcPrechargeRestartCnt = 0x07;    // 3 bit, False/True table
+  t.packCtrsClosingBlocked = true;
+  t.pyroTestInProgress = true;
+  t.battery_packCtrsOpenNowRequested = true;
+  t.battery_packCtrsOpenRequested = true;
+  t.battery_packCtrsResetRequestRequired = true;
+  t.battery_dcLinkAllowedToEnergize = true;
+  t.battery_full_charge_complete = true;
+  t.battery_fully_charged = true;
+  t.HVP_packCurrentMia = true;
+  t.HVP_auxCurrentMia = true;
+  t.HVP_currentSenseMia = true;
+  t.BMS352_mux = false;
+  expect({
+      "<h4>HVIL Status: UNKNOWN(15)</h4>",
+      "<h4>HVP Contactor State: UNKNOWN</h4>",
+      "<h4>BMS Contactor State: UNKNOWN</h4>",
+      "<h4>Negative Contactor: WELDED</h4>",
+      "<h4>Positive Contactor: WELDED</h4>",
+      "<h4>Closing blocked: Yes</h4>",
+      "<h4>Pyrotest in progress: Yes</h4>",
+      "<h4>Contactors Open Now Requested: Yes</h4>",
+      "<h4>Contactors Open Requested: Yes</h4>",
+      "<h4>Contactors Request Status: UNKNOWN</h4>",
+      "<h4>Contactors Reset Request Required: Yes</h4>",
+      "<h4>DC Link Allowed to Energize: Yes</h4>",
+      "<h4>Full Charge Complete: Yes</h4>",
+      "<h4>BMS State: UNKNOWN</h4>",
+      "<h4>BMS HV State: UNKNOWN</h4>",
+      "<h4>BMS UI Charge Status: UNKNOWN</h4>",
+      "<h4>Power Limit State: CALCULATED_FOR_DRIVE</h4>",
+      "<h4>Precharge Status: UNKNOWN</h4>",
+      "<h4>12V Support Status: UNKNOWN</h4>",
+      "<h4>HV Bus Discharge Status: UNKNOWN</h4>",
+      "<h4>Main State: UNKNOWN</h4>",
+      "<h4>Sub State: UNKNOWN</h4>",
+      "<h4>Precharge Rty Cnt: UNKNOWN</h4>",
+      "<h4>12V Support Rty Cnt: UNKNOWN</h4>",
+      "<h4>Discharge Rty Cnt: UNKNOWN</h4>",
+      "<h4>Precharge Restart Cnt: UNKNOWN</h4>",
+      "<h4>Initial Precharge Substate: UNKNOWN</h4>",
+      "<h4>HVP_packCurrentMia: Yes</h4>",
+      "<h4>HVP_auxCurrentMia: Yes</h4>",
+      "<h4>HVP_currentSenseMia: Yes</h4>",
+  });
+  t.BMS352_mux = true;
+  expect({"<h4>Fully Charged: Yes</h4>"});
+
+  memset(&t, 0, sizeof(t));
+}
