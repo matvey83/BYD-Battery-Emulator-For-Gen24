@@ -17,7 +17,20 @@ enum class TeslaPackFamily : uint8_t {
   LegacySX,      // TeslaLegacyBattery: Model S/X 2012-2020
 };
 
-inline ModuleGrouping tesla_module_grouping(TeslaPackFamily family, uint16_t bricks, bool sx_chassis = false) {
+// Capacity when new from 0x392 mux 1 bits 40-49, in 0.1 kWh. 0, 0.1 kWh, 10-bit
+// SNA (1023), and values outside 20.0-100.0 kWh are not used for grouping.
+inline bool tesla_energy_when_new_plausible_x10(uint16_t energy_x10) {
+  return energy_x10 >= 200 && energy_x10 <= 1000;
+}
+
+inline ModuleGrouping tesla_module_grouping(TeslaPackFamily family, uint16_t bricks, bool sx_chassis = false,
+                                            uint16_t energy_when_new_x10 = 0) {
+  // Long Range / Performance NCA 96s46p. Sizes sourced, module order guessed (see 1. above).
+  static constexpr uint8_t SIZES_96_LR[] = {23, 25, 25, 23};
+  // Standard Range NCA 96s31p. 4x24 is uncertain: Electrek describes the same 23/25
+  // split as LR; a TMC post says 4x24 and calls it a guess. There is no SR CAN log
+  // to confirm. Used only when capacity when new is in the SR band.
+  static constexpr uint8_t SIZES_96_SR[] = {24, 24, 24, 24};
   // LFP. Sizes sourced, module order guessed (see 1. above).
   static constexpr uint8_t SIZES_106[] = {25, 28, 28, 25};
   // LFP. Sizes sourced, module order guessed.
@@ -42,15 +55,27 @@ inline ModuleGrouping tesla_module_grouping(TeslaPackFamily family, uint16_t bri
   // supported yet: the brick count logic cannot report 110 and there is no capture.
   // So a Model S/X chassis gets no grouping, and the 106/108 tables are for 3/Y LFP.
   //
-  // 96-brick 3/Y is left ungrouped: Long Range NCA 96s46p is 23+25+25+23, but Standard
-  // Range NCA 96s31p is 4x24, and the brick count cannot tell them apart. Capacity when
-  // new would separate them (LR ~75+ kWh, SR ~50-55 kWh), but that value is not
-  // reliably available at grouping time (0x392 mux 1 is not decoded here, and 0x292
-  // reads 0 or 0.1 kWh on some firmware).
+  // 96-brick 3/Y: brick count cannot tell Long Range NCA 96s46p (23+25+25+23) from
+  // Standard Range NCA 96s31p (4x24, see uncertainty note on SIZES_96_SR). Capacity
+  // when new (0x392 mux 1 bits 40-49, 0.1 kWh) is the discriminator: >= 65.0 kWh is
+  // LR, 45.0-60.0 kWh is SR, otherwise (including Mid Range ~62 kWh, missing, or
+  // implausible values) the pack stays ungrouped. 0x292 is not used; on some
+  // firmware that field is 0 or 0.1 kWh.
   if (sx_chassis) {
     return ModuleGrouping();
   }
   switch (bricks) {
+    case 96:
+      if (!tesla_energy_when_new_plausible_x10(energy_when_new_x10)) {
+        return ModuleGrouping();
+      }
+      if (energy_when_new_x10 >= 650) {
+        return ModuleGrouping::from_sizes(SIZES_96_LR, sizeof(SIZES_96_LR), bricks);
+      }
+      if (energy_when_new_x10 >= 450 && energy_when_new_x10 <= 600) {
+        return ModuleGrouping::from_sizes(SIZES_96_SR, sizeof(SIZES_96_SR), bricks);
+      }
+      return ModuleGrouping();
     case 106:
       return ModuleGrouping::from_sizes(SIZES_106, sizeof(SIZES_106), bricks);
     case 108:

@@ -144,11 +144,12 @@ class TeslaBattery : public CanBattery {
   // Used only when the pack reports no plausible capacity when new (0x392/0x292, legacy S/X packs report none).
   uint32_t fallback_total_capacity_Wh = 0;
 
-  // Call whenever number_of_cells changes
+  // Call whenever number_of_cells or capacity-when-new changes. Display-only.
   void update_module_grouping() {
     datalayer_battery->info.module_grouping =
         tesla_module_grouping(TeslaPackFamily::Model3YClass, datalayer_battery->info.number_of_cells,
-                              user_selected_tesla_GTW_chassisType <= 1);  // 0 Model S, 1 Model X
+                              user_selected_tesla_GTW_chassisType <= 1,  // 0 Model S, 1 Model X
+                              battery_energy_when_new_x10);
   }
 
   // Per-instance extended data for the "More Battery Info" webserver page.
@@ -680,6 +681,8 @@ class TeslaBattery : public CanBattery {
   SocHold soc_hold;  // the held UI SOC for the inverter
   uint8_t battery_battTempPct = 0;
   //0x392: BMS_packConfig
+  // Full pack energy when new, 0x392 mux 1 bits 40-49, 0.1 kWh (0 = not received).
+  uint16_t battery_energy_when_new_x10 = 0;
   uint32_t battery_packMass = 0;
   uint32_t battery_platformMaxBusVoltage = 0;  // raw, scaled in update_values
   uint32_t battery_packConfigMultiplexer = 0;

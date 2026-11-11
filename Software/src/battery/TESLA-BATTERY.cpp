@@ -1801,6 +1801,10 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
           battery_beginning_of_life = new_fw_bol_x10;
           battery_beginning_of_life_source = SohReferenceNewFw;
         }
+        if (battery_energy_when_new_x10 != new_fw_bol_x10) {
+          battery_energy_when_new_x10 = new_fw_bol_x10;
+          update_module_grouping();
+        }
       }
       if (mux == 0) {
         battery_reservedConfig =
