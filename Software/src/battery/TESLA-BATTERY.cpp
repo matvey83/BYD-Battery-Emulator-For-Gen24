@@ -1557,6 +1557,7 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
           mux_zero_counter++;
           if (mux_zero_counter == 2u) {
             datalayer_battery->info.number_of_cells = 2 + 3 * mux_max + 1;
+            update_module_grouping();
             mux_zero_counter++;
           }
         }
@@ -1567,6 +1568,7 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 
         // This is always the last frame in the sequence, so total cells = mux*3 + 1
         datalayer_battery->info.number_of_cells = mux * 3 + 1;
+        update_module_grouping();
       }
       break;
     case 0x2d2:  //BMSVAlimits:  (tesla-m3-pack-findings fw 2019.20.4.2 names 0x2D2 = BMS_driveLimits)
@@ -1626,6 +1628,12 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         battery_platformMaxBusVoltage =
             (((rx_frame.data.u8[4] & 0x03) << 8) |
              (rx_frame.data.u8[3]));  //24|10@1+ (0.1,375) "V" up to 2022.45.15, (1,300) from 2023.2.12
+        // Full pack energy when new, 40|10@1+ (0.1,0) kWh. Used only to group 96-brick 3/Y packs.
+        const uint16_t energy_when_new_x10 = ((rx_frame.data.u8[6] & 0x03) << 8) | rx_frame.data.u8[5];
+        if (battery_energy_when_new_x10 != energy_when_new_x10) {
+          battery_energy_when_new_x10 = energy_when_new_x10;
+          update_module_grouping();
+        }
       }
       if (mux == 0) {
         battery_reservedConfig =
@@ -2956,6 +2964,7 @@ void TeslaBattery::printFaultCodesPcsCp() {
 }
 
 void TeslaBattery::setup(void) {  // Performs one time setup at startup
+  update_module_grouping();
 
   if (allows_contactor_closing) {
     *allows_contactor_closing = true;

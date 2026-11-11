@@ -3,6 +3,7 @@
 #include "../../battery/BATTERIES.h"
 #include "../../datalayer/datalayer.h"
 #include "../../lib/ESP32Async-ESPAsyncWebServer/src/ESPAsyncWebServer.h"
+#include "cellmonitor_js.h"
 #include "index_html.h"
 
 namespace {
@@ -42,7 +43,9 @@ void append_uint(String& out, unsigned value, const char* suffix) {
    not read yet are left out of both), n = cells configured, a = the pack reports balancing active,
    p = the pack reports balancing pending. A BMS can flag cells for balancing long before it
    actually bleeds them; while the aggregate status reports that waiting state, the page labels the
-   flagged bars as pending instead. The same text goes into the page and answers its polls. */
+   flagged bars as pending instead. m = bricks per module, left out unless the battery integration
+   knows the grouping (see module_grouping.h). The same text goes into the page and answers its
+   polls. */
 void append_cell_json(String& out, const DATALAYER_BATTERY_TYPE& pack) {
   const uint8_t cells = pack.info.number_of_cells;
   const char* separator = "";
@@ -69,17 +72,23 @@ void append_cell_json(String& out, const DATALAYER_BATTERY_TYPE& pack) {
   append_uint(out, cells, ",\"a\":");
   out += (pack.status.balancing_status == BALANCING_STATUS_ACTIVE) ? "1" : "0";
   out += ",\"p\":";
-  out += (pack.status.balancing_status == BALANCING_STATUS_BLOCKED) ? "1}" : "0}";
+  out += (pack.status.balancing_status == BALANCING_STATUS_BLOCKED) ? "1" : "0";
+  if (pack.info.module_grouping.known()) {
+    out += ",\"m\":";
+    pack.info.module_grouping.append_json(out);
+  }
+  out += "}";
 }
 
 // Page chrome. The More Battery Info link carries location.search along, so the pack selected here
 // stays selected there; the browser assembles it, nothing is built on the ESP.
 const char page_head[] =
-    INDEX_HTML_SUBPAGE_STYLE R"html(.container{display:flex;flex-wrap:wrap;justify-content:space-around}
-.cell{padding:10px;border:1px solid #fff;text-align:center}
+    INDEX_HTML_SUBPAGE_STYLE R"html(.container{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
+.cell{padding:4px;border:1px solid #fff;text-align:center}
 .lv{color:red}
 #graph{display:flex;align-items:flex-end;height:200px;border:1px solid #ccc;cursor:pointer;touch-action:pan-y}
 .bar{flex:1;border:1px solid #fff}
+.gap{flex:1;border:1px solid transparent}
 .row{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;margin:10px 0}
 #val,.lgd{font-weight:700}
 .lgd{padding:2px 8px;border:1px solid transparent;border-radius:4px}
@@ -120,24 +129,34 @@ const char panel[] =
 // scrollWidth still spans all of them when 192 bars overflow a phone screen. Table cells select on
 // a tap or a mouse hover, so a swipe that scrolls the table does not move the selection.
 //
+// When the pack reports its module grouping (m) and the modules add up to exactly the cells drawn,
+// an empty column as wide as a bar (.gap) is left at every module boundary. B holds the bars by
+// cell number, since the graph's children no longer are, and Q maps each column of the graph to
+// its cell, or to -1 for a gap. Without a grouping Q is one column per cell, as before. The pure
+// part of this (the Modules row text, the columns, the pointer lookup) is in cellmonitor_js.h,
+// where the unit tests can run it.
+//
 // H(cell, selected) holds both colour schemes, so the bars take their initial colour from it too. A
 // selected bar turns white whatever its colour: the lighter cyan a balancing bar used to get was
 // next to invisible on the two pixel wide bars of a phone.
 const char page_script[] = R"html(<script>
 const g=i=>document.getElementById(i),G=g('graph'),V=g('val'),C=g('cells'),T=g('volt'),Y=g('lgd'),P=G.parentNode;
-let d=[],b=[],p=-1,t;
-const H=(j,o,z=b[j])=>{G.children[j].style.background=o?'#fff':z?'#0ff':'blue';C.children[j].style.background=o?z?'#066':'blue':''},
+let d=[],b=[],B=[],Q=[],p=-1,t;
+const H=(j,o,z=b[j])=>{B[j].style.background=o?'#fff':z?'#0ff':'blue';C.children[j].style.background=o?z?'#066':'blue':''},
 S=i=>{if(p in d)H(p,0);H(p=i,1);V.textContent='Cell '+(i+1)+': '+d[i]+' mV'+(b[i]?' (balancing)':'')},
 draw=j=>{
-d=j.d;b=j.b;G.textContent=C.textContent='';
+d=j.d;b=j.b;B=[];Q=[];G.textContent=C.textContent='';
 const k=b.some(x=>x);
 Y.textContent=k?(j.p?'Pending':'Balancing'):j.a?'Balancing is active now!':'';
 Y.style.background=k?'#0ff':'#f90';Y.hidden=!Y.textContent;
 if(!d.length){p=-1;V.textContent='Value: ...';T.textContent=j.n?j.n+' cells configured, but cellvoltages not yet read':'Amount of cells unknown. Cellvoltages not yet read';return}
 const mn=Math.min(...d),mx=Math.max(...d),lo=mn-20,sc=180/(mx-mn+40);
-T.innerHTML='Min/Max: '+mn+'/'+mx+' mV<br>Delta: '+(mx-mn)+' mV'+(j.a?' (balancing now!)':'');
-d.forEach((mV,i)=>{
-const e=document.createElement('div'),r=document.createElement('div');
+T.innerHTML='Min/Max: '+mn+'/'+mx+' mV<br>Delta: '+(mx-mn)+' mV'+(j.a?' (balancing now!)':'')+modulesRow(j.m);
+Q=columns(d.length,j.m);
+Q.forEach(i=>{
+const r=document.createElement('div');
+if(i<0){r.className='gap';G.appendChild(r);return}
+const mV=d[i],e=document.createElement('div');
 e.className='cell';
 e.innerHTML='<span'+(mV<3000?' class=lv>':'>')+'Cell '+(i+1)+'<br>'+mV+' mV</span>';
 e.onclick=e.onmouseover=()=>S(i);
@@ -145,12 +164,12 @@ r.className='bar';
 r.style.height=(mV-lo)*sc+20+'px';
 if(b[i])r.style.borderColor='#0ff';
 if(mV==mn||mV==mx){e.style.borderColor='red';r.style.borderColor='red'}
-G.appendChild(r);C.appendChild(e);H(i,0)});
+G.appendChild(r);B[i]=r;C.appendChild(e);H(i,0)});
 p in d?S(p):(p=-1,V.textContent='Value: ...')},
 tick=()=>{clearTimeout(t);if(document.hidden)return;let w=5000;
 fetch(U,{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{draw(j);w=20000}).catch(()=>0)
 .then(()=>{P.style.opacity=w>5000?'':.5;clearTimeout(t);t=setTimeout(tick,w)})};
-G.onpointerdown=G.onpointermove=v=>{const i=(v.clientX-G.getBoundingClientRect().left-G.clientLeft)/G.scrollWidth*d.length|0;i in d&&S(i)};
+G.onpointerdown=G.onpointermove=v=>{const i=cellAt(Q,(v.clientX-G.getBoundingClientRect().left-G.clientLeft)/G.scrollWidth);i>=0&&S(i)};
 document.addEventListener('visibilitychange',tick);
 draw(J);t=setTimeout(tick,20000)
 </script>)html";
@@ -187,6 +206,9 @@ String cellmonitor_processor(const String& var, unsigned selected) {
   append_cell_json(content, pack);
   content += ";</script>";
 
+  content += "<script>";
+  content += cellmonitor_logic_js;
+  content += "</script>";
   content += page_script;
   return content;
 }

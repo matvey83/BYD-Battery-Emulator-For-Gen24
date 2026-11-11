@@ -4,6 +4,7 @@
 #include "../datalayer/datalayer_extended.h"
 #include "CanBattery.h"
 #include "TESLA-HTML.h"
+#include "TESLA-MODULES.h"
 
 // 0x7FF gateway config, "Gen3" vehicles only, not applicable to Gen2 "classic" Model S and Model X
 // These are user configurable from the Webserver UI
@@ -58,6 +59,14 @@ class TeslaBattery : public CanBattery {
 
  private:
   TeslaHtmlRenderer renderer;
+
+  // Call whenever number_of_cells or capacity-when-new changes. Display-only.
+  void update_module_grouping() {
+    datalayer_battery->info.module_grouping =
+        tesla_module_grouping(TeslaPackFamily::Model3YClass, datalayer_battery->info.number_of_cells,
+                              user_selected_tesla_GTW_chassisType <= 1,  // 0 Model S, 1 Model X
+                              battery_energy_when_new_x10);
+  }
 
   // Per-instance extended data for the "More Battery Info" webserver page.
   // Points at datalayer_extended.tesla for the main battery, or datalayer_extended.tesla_2
@@ -576,6 +585,8 @@ class TeslaBattery : public CanBattery {
   uint16_t battery_soc_ave = 0;
   uint8_t battery_battTempPct = 0;
   //0x392: BMS_packConfig
+  // Full pack energy when new, 0x392 mux 1 bits 40-49, 0.1 kWh (0 = not received).
+  uint16_t battery_energy_when_new_x10 = 0;
   uint32_t battery_packMass = 0;
   uint32_t battery_platformMaxBusVoltage = 0;  // raw, scaled in update_values
   uint32_t battery_packConfigMultiplexer = 0;

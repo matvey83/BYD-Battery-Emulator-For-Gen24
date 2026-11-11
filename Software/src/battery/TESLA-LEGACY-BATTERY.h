@@ -1,6 +1,7 @@
 #ifndef TESLA_LEGACY_BATTERY_H
 #define TESLA_LEGACY_BATTERY_H
 #include "CanBattery.h"
+#include "TESLA-MODULES.h"
 
 class TeslaLegacyBattery : public CanBattery {
  public:
