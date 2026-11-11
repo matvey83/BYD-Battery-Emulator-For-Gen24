@@ -663,17 +663,6 @@ static void write_framebuffer(const uint8_t* frame) {
   }
 }
 
-static CellPackFamily oled_cell_family() {
-  if (user_selected_battery_type == BatteryType::TeslaLegacy) {
-    return CellPackFamily::TeslaLegacySX;
-  }
-  if (user_selected_battery_type == BatteryType::TeslaModel3Y ||
-      user_selected_battery_type == BatteryType::TeslaModelSX) {
-    return CellPackFamily::Tesla3Y;
-  }
-  return CellPackFamily::Unknown;
-}
-
 static void print_cell_bars() {
   static CellHold hold{};
   const bool live = oled_bus_live(datalayer.battery.status.CAN_battery_still_alive);
@@ -681,8 +670,8 @@ static void print_cell_bars() {
   if (count > MAX_AMOUNT_CELLS) {
     count = MAX_AMOUNT_CELLS;
   }
-  const bool draw =
-      cell_hold_step(hold, live, oled_cell_family(), datalayer.battery.status.cell_voltages_mV, count, millis());
+  const bool draw = cell_hold_step(hold, live, datalayer.battery.info.module_grouping,
+                                   datalayer.battery.status.cell_voltages_mV, count, millis());
 
   // Static: the connectivity task stack is 4 KB, and a full frame is 1 KB.
   static uint8_t frame[1024];
@@ -690,7 +679,7 @@ static void print_cell_bars() {
   uint8_t column[128];
   const CellScale scale = cell_voltage_scale(hold.mv, hold.count);
   char header[22];
-  if (!draw || !layout_cell_bars(hold.family, hold.mv, hold.count, column) ||
+  if (!draw || !layout_cell_bars(hold.grouping, hold.mv, hold.count, column) ||
       !format_cell_header(header, scale.min_mV, scale.max_mV)) {
     framebuffer_text(frame, 0, "no cell data");
     write_framebuffer(frame);
