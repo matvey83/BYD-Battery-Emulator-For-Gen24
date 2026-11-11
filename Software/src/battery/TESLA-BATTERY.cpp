@@ -1628,6 +1628,12 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         battery_platformMaxBusVoltage =
             (((rx_frame.data.u8[4] & 0x03) << 8) |
              (rx_frame.data.u8[3]));  //24|10@1+ (0.1,375) "V" up to 2022.45.15, (1,300) from 2023.2.12
+        // Full pack energy when new, 40|10@1+ (0.1,0) kWh. Used only to group 96-brick 3/Y packs.
+        const uint16_t energy_when_new_x10 = ((rx_frame.data.u8[6] & 0x03) << 8) | rx_frame.data.u8[5];
+        if (battery_energy_when_new_x10 != energy_when_new_x10) {
+          battery_energy_when_new_x10 = energy_when_new_x10;
+          update_module_grouping();
+        }
       }
       if (mux == 0) {
         battery_reservedConfig =
