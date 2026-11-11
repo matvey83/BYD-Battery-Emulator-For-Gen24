@@ -337,10 +337,16 @@ TEST(CellBarTests, GapsOnlyWhenTheModuleLayoutIsExact) {
   ASSERT_TRUE(layout_cell_bars(legacy83, mv, 83, column));
   expect_layout(legacy83, mv, 83, column);
 
-  const auto y96 = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96);
+  // 96-brick 3/Y stays ungrouped: brick count cannot tell 23+25+25+23 from 4x24.
+  const auto y96_unknown = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96);
+  EXPECT_FALSE(y96_unknown.known());
+  ASSERT_TRUE(layout_cell_bars(y96_unknown, mv, 96, column));
+  expect_layout(y96_unknown, mv, 96, column);
+
+  // The 23+25+25+23 layout still fits (width 99, origin 14) when grouping is known.
+  const uint8_t y96_lr_sizes[] = {23, 25, 25, 23};
+  const auto y96 = ModuleGrouping::from_sizes(y96_lr_sizes, 4, 96);
   ASSERT_TRUE(layout_cell_bars(y96, mv, 96, column));
-  // 23+25+25+23, 3 gaps, width 99, origin 14. First gap after cell 23.
-  ASSERT_EQ(y96.bricks_in_module[0], 23);
   EXPECT_EQ(column[14 + 23], 0);
   expect_layout(y96, mv, 96, column);
 
@@ -376,6 +382,22 @@ TEST(CellBarTests, GapsOnlyWhenTheModuleLayoutIsExact) {
   EXPECT_FALSE(mismatched.known());
   ASSERT_TRUE(layout_cell_bars(mismatched, mv, 96, column));
   expect_layout(mismatched, mv, 96, column);
+}
+
+TEST(CellBarTests, GapsDroppedWhenTheyWouldNotFit) {
+  uint16_t mv[128];
+  for (int i = 0; i < 128; i++) {
+    mv[i] = 4000;
+  }
+  uint8_t column[128];
+  const uint8_t sizes[] = {64, 64};
+  const auto grouping = ModuleGrouping::from_sizes(sizes, 2, 128);
+  ASSERT_TRUE(grouping.known());
+  ASSERT_TRUE(layout_cell_bars(grouping, mv, 128, column));
+  // 128 cells + 1 gap would be 129px, so the gap is dropped and every column is a bar.
+  for (int x = 0; x < 128; x++) {
+    EXPECT_GE(column[x], CELL_BAR_MIN_PX) << x;
+  }
 }
 
 TEST(CellBarTests, MissingPackAndThirtyMinuteHold) {
