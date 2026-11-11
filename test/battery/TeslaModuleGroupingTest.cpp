@@ -32,7 +32,6 @@ struct Layout {
 
 const std::vector<Layout>& Layouts() {
   static const std::vector<Layout> layouts = {
-      {TeslaPackFamily::Model3YClass, 96, {23, 25, 25, 23}},
       {TeslaPackFamily::Model3YClass, 106, {25, 28, 28, 25}},
       {TeslaPackFamily::Model3YClass, 108, {26, 28, 28, 26}},
       {TeslaPackFamily::LegacySX, 96, std::vector<uint8_t>(16, 6)},
@@ -166,11 +165,17 @@ TEST(TeslaModuleGroupingTest, ModuleBoundaries) {
     }
     return result;
   };
-  EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::Model3YClass, 96)), (std::vector<unsigned>{23, 48, 73}));
   EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::Model3YClass, 106)), (std::vector<unsigned>{25, 53, 81}));
   EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::Model3YClass, 108)), (std::vector<unsigned>{26, 54, 82}));
   EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::LegacySX, 84)),
             (std::vector<unsigned>{6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78}));
+}
+
+TEST(TeslaModuleGroupingTest, Model3Y96StaysUnknown) {
+  // Brick count alone cannot tell Long Range 96s46p (23+25+25+23) from Standard Range 96s31p (4x24).
+  ModuleGrouping g = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96);
+  EXPECT_FALSE(g.known());
+  EXPECT_EQ(g.module_count, 0);
 }
 
 TEST(TeslaModuleGroupingTest, NonMatchingCountsAreUnknown) {
@@ -186,7 +191,7 @@ TEST(TeslaModuleGroupingTest, NonMatchingCountsAreUnknown) {
 TEST(TeslaModuleGroupingTest, OnlyTheExpectedCountsAreKnown) {
   for (unsigned bricks = 0; bricks <= 255; bricks++) {
     SCOPED_TRACE(bricks);
-    const bool y_class = bricks == 96 || bricks == 106 || bricks == 108;
+    const bool y_class = bricks == 106 || bricks == 108;
     EXPECT_EQ(tesla_module_grouping(TeslaPackFamily::Model3YClass, bricks, false).known(), y_class);
     EXPECT_FALSE(tesla_module_grouping(TeslaPackFamily::Model3YClass, bricks, true).known());  // S/X chassis
     EXPECT_EQ(tesla_module_grouping(TeslaPackFamily::LegacySX, bricks).known(), bricks == 96 || bricks == 84);
@@ -226,13 +231,13 @@ TEST_F(TeslaModuleGroupingBatteryTest, UnknownBeforeAnyFrame) {
   EXPECT_FALSE(grouping().known());
 }
 
-TEST_F(TeslaModuleGroupingBatteryTest, Pack96) {
+TEST_F(TeslaModuleGroupingBatteryTest, Pack96StaysUnknown) {
   TeslaBattery pack;
   pack.setup();
   ScanFullFrames(&pack, 31);
   EXPECT_EQ(datalayer.battery.info.number_of_cells, 96);
-  EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{23, 25, 25, 23}));
-  EXPECT_EQ(Json(grouping()), "[23,25,25,23]");
+  EXPECT_FALSE(grouping().known());
+  EXPECT_EQ(Json(grouping()), "[]");
 }
 
 TEST_F(TeslaModuleGroupingBatteryTest, Pack106) {
@@ -251,12 +256,13 @@ TEST_F(TeslaModuleGroupingBatteryTest, Pack108) {
   EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{26, 28, 28, 26}));
 }
 
-TEST_F(TeslaModuleGroupingBatteryTest, ModelYChassisUsesTheSameTables) {
+TEST_F(TeslaModuleGroupingBatteryTest, ModelYChassis96AlsoStaysUnknown) {
   user_selected_tesla_GTW_chassisType = 3;
   TeslaBattery pack;
   pack.setup();
   ScanFullFrames(&pack, 31);
-  EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{23, 25, 25, 23}));
+  EXPECT_EQ(datalayer.battery.info.number_of_cells, 96);
+  EXPECT_FALSE(grouping().known());
 }
 
 TEST_F(TeslaModuleGroupingBatteryTest, UnexpectedCountsStayUnknown) {
