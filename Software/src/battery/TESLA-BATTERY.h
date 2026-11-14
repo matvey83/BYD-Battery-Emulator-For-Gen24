@@ -19,6 +19,41 @@ inline bool tesla_cac_plausible(uint32_t min_x10, uint32_t avg_x10, uint32_t max
   return min_x10 >= 200 && min_x10 <= avg_x10 && avg_x10 <= max_x10 && max_x10 <= 4000;
 }
 
+// 0x7AA mux 1 HVP_packVoltage is signed, 0.1 V per count, so a positive count is already dV.
+// 0 is the power-on value (nothing received yet). Above 1000.0 V is not a Tesla pack; the
+// positive end of that signal is 3276.7 V.
+inline constexpr int16_t tesla_hvp_pack_voltage_max_dV = 10000;
+
+// Voltage published as status.voltage_dV (0.1 V).
+// Contactors not reported open: hv_bus_dV, which is 0x132 BMS_hvBusStatus (already dV).
+// Contactors open: 0x132 is the DC link, not the cell stack. Use HVP_packVoltage when that
+// reading is fresh and in range, else the sum of the brick millivolts when every expected
+// brick is non-zero (0 mV has not been received). Else keep hv_bus_dV.
+// Brick dV is sum(mV) / 100, truncating the leftover millivolts (100 mV = 0.1 V).
+inline uint16_t tesla_reported_voltage_dV(bool contactors_open, uint16_t hv_bus_dV, int16_t hvp_pack_dV, bool hvp_fresh,
+                                          const uint16_t* cell_mV, uint16_t cell_count) {
+  if (!contactors_open) {
+    return hv_bus_dV;
+  }
+  if (hvp_fresh && hvp_pack_dV > 0 && hvp_pack_dV <= tesla_hvp_pack_voltage_max_dV) {
+    return static_cast<uint16_t>(hvp_pack_dV);
+  }
+  if (cell_mV != nullptr && cell_count > 0 && cell_count <= MAX_AMOUNT_CELLS) {
+    uint32_t sum_mV = 0;
+    for (uint16_t i = 0; i < cell_count; i++) {
+      if (cell_mV[i] == 0) {
+        return hv_bus_dV;
+      }
+      sum_mV += cell_mV[i];
+    }
+    const uint32_t sum_dV = sum_mV / 100;
+    if (sum_dV > 0 && sum_dV <= 65535u) {
+      return static_cast<uint16_t>(sum_dV);
+    }
+  }
+  return hv_bus_dV;
+}
+
 // 0x7FF gateway config, "Gen3" vehicles only, not applicable to Gen2 "classic" Model S and Model X
 // These are user configurable from the Webserver UI
 extern bool user_selected_tesla_digital_HVIL;
@@ -135,6 +170,12 @@ class TeslaBattery : public CanBattery {
 
   static constexpr const char* NameSX = "Tesla Model S/X";
   static constexpr const char* Name3Y = "Tesla Model 3/Y";
+
+  // 0x212 BMS_contactorState OPEN. CLOSED is 4; update_values already treats the two that way.
+  static constexpr uint8_t ContactorOpen = 1;
+  // 0x7AA mux 1 is one page of HVP_debugMessage. The last HVP_packVoltage stays usable for this
+  // many update_values() calls (1 Hz). A gap of a few seconds is normal for that rotating frame.
+  static constexpr uint16_t HvpPackVoltageFresh_s = 30;
 
  private:
   TeslaHtmlRenderer renderer;
@@ -872,6 +913,10 @@ class TeslaBattery : public CanBattery {
   uint32_t HVP_info_bootCrc = 0;
   int16_t HVP_dcLinkVoltage = 0;
   int16_t HVP_packVoltage = 0;
+  // Reception of 0x7AA mux 1. The decoded voltage above is unchanged; these only say whether it
+  // is still fresh. Age counts update_values() calls since that frame.
+  bool hvp_pack_voltage_seen = false;
+  uint16_t hvp_pack_voltage_age_s = 0;
   int16_t HVP_fcLinkVoltage = 0;
   uint16_t HVP_packContVoltage = 0;
   int16_t HVP_packNegativeV = 0;
