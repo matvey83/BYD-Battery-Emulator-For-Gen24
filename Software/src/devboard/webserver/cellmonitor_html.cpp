@@ -161,6 +161,7 @@ e.className='cell';
 e.innerHTML='<span'+(mV<3000?' class=lv>':'>')+'Cell '+(i+1)+'<br>'+mV+' mV</span>';
 e.onclick=e.onmouseover=()=>S(i);
 r.className='bar';
+// The 10% floor (+20 of 200) is intentional so only the gaps between module groups ever read as 0 height. No cell bar should ever be drawn at or near 0.
 r.style.height=(mV-lo)*sc+20+'px';
 if(b[i])r.style.borderColor='#0ff';
 if(mV==mn||mV==mx){e.style.borderColor='red';r.style.borderColor='red'}
