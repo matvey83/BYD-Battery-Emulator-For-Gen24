@@ -290,27 +290,49 @@ TEST(CellBarTests, HeaderMatchesMock) {
   EXPECT_STREQ(line, "3.912-3.912V  0mV");
 }
 
-TEST(CellBarTests, MinimumSpanDoesNotStretchNoise) {
+TEST(CellBarTests, ZeroCellIsAStubAndExcludedFromMinMax) {
   const uint16_t mv[] = {3912, 3920, 0, 3912};
   const CellScale scale = cell_voltage_scale(mv, 4);
   EXPECT_TRUE(scale.have);
   EXPECT_EQ(scale.min_mV, 3912);
   EXPECT_EQ(scale.max_mV, 3920);
-  EXPECT_EQ(scale.span_mV, CELL_BAR_MIN_SPAN_MV);
-  const uint8_t low = cell_bar_height(3912, scale);
-  const uint8_t high = cell_bar_height(3920, scale);
-  EXPECT_GT(high, low);
-  EXPECT_GE(low, CELL_BAR_MIN_PX);
-  EXPECT_LT(high, CELL_BAR_PX);
+  EXPECT_EQ(scale.range_mV, 48u);
+  EXPECT_GT(cell_bar_height(3920, scale), cell_bar_height(3912, scale));
   EXPECT_EQ(cell_bar_height(0, scale), CELL_BAR_MIN_PX);
 }
 
-TEST(CellBarTests, ExactMinimumSpanUsesTheFullColumn) {
+TEST(CellBarTests, WebScaleTwentyMillivoltSpread) {
+  // Web: lo = 3892, sc = 180/60 = 3, heights 80 and 140 of 200px.
+  // OLED: (20*180 + 20*60)*56/12000 = 22.4 -> 22; (40*180 + 20*60)*56/12000 = 39.2 -> 39.
   const uint16_t mv[] = {3912, 3932};
   const CellScale scale = cell_voltage_scale(mv, 2);
-  EXPECT_EQ(scale.span_mV, 20);
-  EXPECT_EQ(cell_bar_height(3912, scale), CELL_BAR_MIN_PX);
-  EXPECT_EQ(cell_bar_height(3932, scale), CELL_BAR_PX);
+  EXPECT_EQ(scale.range_mV, 60u);
+  EXPECT_EQ(cell_bar_height(3912, scale), 22);
+  EXPECT_EQ(cell_bar_height(3932, scale), 39);
+}
+
+TEST(CellBarTests, AllEqualCellsAreThirtyPixels) {
+  // delta 0, range 40: (20*180 + 20*40)*56/8000 = 30.8 -> 30.
+  const uint16_t mv[] = {3900, 3900, 3900, 3900};
+  const CellScale scale = cell_voltage_scale(mv, 4);
+  EXPECT_EQ(scale.range_mV, 40u);
+  uint8_t column[128];
+  ASSERT_TRUE(layout_cell_bars(ModuleGrouping(), mv, 4, column));
+  int drawn = 0;
+  for (int x = 0; x < 128; x++) {
+    if (column[x] != 0) {
+      EXPECT_EQ(column[x], 30) << x;
+      drawn++;
+    }
+  }
+  EXPECT_EQ(drawn, 4);
+}
+
+TEST(CellBarTests, AllZeroPackHasNoBars) {
+  const uint16_t mv[] = {0, 0, 0};
+  EXPECT_FALSE(cell_voltage_scale(mv, 3).have);
+  uint8_t column[128];
+  EXPECT_FALSE(layout_cell_bars(ModuleGrouping(), mv, 3, column));
 }
 
 TEST(CellBarTests, GapsOnlyWhenTheModuleLayoutIsExact) {
