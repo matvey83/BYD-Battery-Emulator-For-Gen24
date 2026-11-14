@@ -27,7 +27,7 @@ PER_LINE = 16
 QNH_START = "\n\n        function calibrateQnhZero()"
 QNH_END = "\n        function editTeslaBalAct()"
 CHG_START = "\n          function editChargerHVDCEnabled()"
-CHG_END = "\n\n          function goToMainPage()"
+CHG_END = "\n\n\n          function haDisc(c)"
 
 
 def small_script(full: str) -> str:
@@ -105,7 +105,7 @@ def check() -> int:
     if b"function calibrateQnhZero" in small or b"function editChargerHVDCEnabled" in small:
         print("gen_settings_js: small-flash script still contains an optional block", file=sys.stderr)
         return 1
-    for name in (b"askFactoryReset", b"editTeslaBalAct", b"goToMainPage"):
+    for name in (b"askFactoryReset", b"editTeslaBalAct", b"haDisc"):
         if name not in full or name not in small:
             print(f"gen_settings_js: {name.decode()} missing from a variant", file=sys.stderr)
             return 1

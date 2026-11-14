@@ -107,7 +107,6 @@
             if(value!==null){if(value>=0&&value<=1000){var xhr=new 
           XMLHttpRequest();xhr.onload=editComplete;xhr.onerror=editError;xhr.open('GET','/updateChargeEndA?value='+value,true);xhr.send();}else{alert('Invalid value. Please enter a value between 0 and 100');}}}
 
-          function goToMainPage() { window.location.href = '/'; }
 
           function haDisc(c) {
             var f = document.querySelector("[name=HADISCFWU]"), n = document.querySelector("[name=HADISC]");
