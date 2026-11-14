@@ -105,7 +105,7 @@ class CanLogTestFixture : public testing::Test {
       // need minutes of emulated time to reach a late PID, so the deadline is
       // generous.
 
-      const size_t tx_start = tx_frames.size();
+      size_t i = tx_frames.size();
       const unsigned long deadline = now + 600000;  // 600 s of emulated time
       bool poll_found = false;
       while (now < deadline && !poll_found) {
@@ -113,8 +113,8 @@ class CanLogTestFixture : public testing::Test {
         set_millis64(now);
         udsBattery->transmit_can(now);
 
-        // Go through all the frames that the battery has transmitted.
-        for (size_t i = tx_start; i < tx_frames.size(); i++) {
+        // Go through the frames transmitted since the last check.
+        for (; i < tx_frames.size(); i++) {
           const CAN_frame& req = tx_frames[i];
           const bool single_frame = (req.data.u8[0] == 0x02 || req.data.u8[0] == 0x03);
           const bool one_byte_match =
@@ -272,7 +272,7 @@ class PidDemuxTest : public CanLogTestFixture {
     const uint8_t balancing_bytes[] = {0xA5, 0x3C, 0x00, 0xFF, 0x81, 0x10, 0x42, 0x80, 0x01, 0x55, 0xAA, 0x0F};
     for (int i = 0; i < 96; i++) {
       bool expected = (balancing_bytes[i / 8] >> (i % 8)) & 1;
-      EXPECT_EQ(datalayer.battery.status.cell_balancing_status[i], expected) << "cell " << i;
+      EXPECT_EQ(datalayer.battery.status.cell_balancing_status.get(i), expected) << "cell " << i;
     }
 
     // 0x155 broadcast: SOC value bytes 4-5 are 0x2132 (8498 = 84.98%).
