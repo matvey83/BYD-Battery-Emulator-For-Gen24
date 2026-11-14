@@ -252,12 +252,15 @@ inline void format_health(const HealthInputs& in, HealthRows& rows) {
 }
 
 // Cell bars. One 1px column per cell on the 56px under the text row, centered in 128.
-// Every drawn cell (including 0 mV and the lowest voltage) is at least 2px tall, so a
-// blank column in the bar strip is only a module gap (plus leftover side padding).
+// Heights use the website cell monitor scale (200px chart: lo = min - 20mV,
+// sc = 180 / (delta + 40), height = (mV - lo) * sc + 20), shrunk to 56px. The 10% floor
+// (+20 of 200) is intentional so only the gaps between module groups ever read as 0
+// height. No cell bar should ever be drawn at or near 0. A 0 mV cell is excluded from
+// min/max and stays a 2px stub. A blank column in the bar strip is only a module gap
+// (plus leftover side padding).
 // Gaps are 1px and come from ModuleGrouping, the same tables as the web cell monitor:
 // only when the brick count exactly matches a known layout. If the bars plus gaps
 // would exceed 128px, the gaps are dropped and the cells stay packed.
-static constexpr uint16_t CELL_BAR_MIN_SPAN_MV = 20;
 static constexpr uint8_t CELL_BAR_PX = 56;
 static constexpr uint8_t CELL_BAR_MIN_PX = 2;
 static constexpr uint16_t CELL_BAR_MAX_CELLS = 128;
@@ -266,8 +269,7 @@ struct CellScale {
   bool have = false;
   uint16_t min_mV = 0;
   uint16_t max_mV = 0;
-  uint16_t lo_mV = 0;
-  uint16_t span_mV = CELL_BAR_MIN_SPAN_MV;
+  uint32_t range_mV = 40;  // delta + 40, as on the web chart
 };
 
 inline CellScale cell_voltage_scale(const uint16_t* mv, uint16_t count) {
@@ -297,13 +299,15 @@ inline CellScale cell_voltage_scale(const uint16_t* mv, uint16_t count) {
   scale.have = true;
   scale.min_mV = min_mV;
   scale.max_mV = max_mV;
-  const uint16_t delta = (uint16_t)(max_mV - min_mV);
-  scale.span_mV = delta < CELL_BAR_MIN_SPAN_MV ? CELL_BAR_MIN_SPAN_MV : delta;
-  const uint16_t pad = (uint16_t)((scale.span_mV - delta) / 2u);
-  scale.lo_mV = pad > min_mV ? 0 : (uint16_t)(min_mV - pad);
+  scale.range_mV = (uint32_t)(max_mV - min_mV) + 40u;
   return scale;
 }
 
+// Web height in a 200px chart, ((mv - min + 20) * 180 / range + 20), scaled to 56px:
+//   ((mv - min + 20) * 180 + 20 * range) * 56 / (range * 200). The 10% floor (+20 of 200)
+//   is intentional so only the gaps between module groups ever read as 0 height. No cell
+//   bar should ever be drawn at or near 0. Cap at 56 if rounding needs it. A 0 mV cell
+//   stays a 2px stub.
 inline uint8_t cell_bar_height(uint16_t mv, const CellScale& scale) {
   if (!scale.have) {
     return 0;
@@ -311,18 +315,17 @@ inline uint8_t cell_bar_height(uint16_t mv, const CellScale& scale) {
   if (mv == 0) {
     return CELL_BAR_MIN_PX;
   }
-  const uint16_t above = mv > scale.lo_mV ? (uint16_t)(mv - scale.lo_mV) : 0;
-  uint32_t height = (uint32_t)above * (CELL_BAR_PX - CELL_BAR_MIN_PX) / scale.span_mV + CELL_BAR_MIN_PX;
-  if (height < CELL_BAR_MIN_PX) {
-    height = CELL_BAR_MIN_PX;
-  }
+  const uint32_t above = (uint32_t)mv + 20u > scale.min_mV ? (uint32_t)mv + 20u - scale.min_mV : 0u;
+  const uint32_t range = scale.range_mV == 0 ? 40u : scale.range_mV;
+  uint32_t height = (above * 180u + 20u * range) * CELL_BAR_PX / (range * 200u);
   if (height > CELL_BAR_PX) {
     height = CELL_BAR_PX;
   }
   return (uint8_t)height;
 }
 
-// column[x] is 0 (side padding or a 1px module gap) or 2..56 (a cell bar).
+// column[x] is 0 (side padding or a 1px module gap) or a cell bar
+// (2px stub if 0 mV, else the web scale).
 // False when there is no valid cell to scale against.
 inline bool layout_cell_bars(const ModuleGrouping& grouping, const uint16_t* mv, uint16_t count, uint8_t column[128]) {
   memset(column, 0, 128);
