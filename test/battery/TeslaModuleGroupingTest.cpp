@@ -56,6 +56,15 @@ CAN_frame BrickFrame(uint8_t mux, uint8_t flags) {
   return frame;
 }
 
+// 0x392 mux 1: capacity when new is bits 40-49, 0.1 kWh.
+CAN_frame EnergyWhenNewFrame(uint16_t energy_x10) {
+  CAN_frame frame = Frame(0x392);
+  frame.data.u8[0] = 1;
+  frame.data.u8[5] = energy_x10 & 0xFF;
+  frame.data.u8[6] = (energy_x10 >> 8) & 0x03;
+  return frame;
+}
+
 // A full scan plus the second mux-0 frame that publishes the count.
 void ScanFullFrames(TeslaBattery* pack, uint8_t last_mux) {
   for (uint8_t mux = 0; mux <= last_mux; mux++) {
@@ -165,17 +174,43 @@ TEST(TeslaModuleGroupingTest, ModuleBoundaries) {
     }
     return result;
   };
+  EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::Model3YClass, 96, false, 821)),
+            (std::vector<unsigned>{23, 48, 73}));
+  EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::Model3YClass, 96, false, 500)),
+            (std::vector<unsigned>{24, 48, 72}));
   EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::Model3YClass, 106)), (std::vector<unsigned>{25, 53, 81}));
   EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::Model3YClass, 108)), (std::vector<unsigned>{26, 54, 82}));
   EXPECT_EQ(boundaries(tesla_module_grouping(TeslaPackFamily::LegacySX, 84)),
             (std::vector<unsigned>{6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78}));
 }
 
-TEST(TeslaModuleGroupingTest, Model3Y96StaysUnknown) {
+TEST(TeslaModuleGroupingTest, Model3Y96StaysUnknownWithoutAPlausibleCapacity) {
   // Brick count alone cannot tell Long Range 96s46p (23+25+25+23) from Standard Range 96s31p (4x24).
-  ModuleGrouping g = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96);
-  EXPECT_FALSE(g.known());
-  EXPECT_EQ(g.module_count, 0);
+  EXPECT_FALSE(tesla_module_grouping(TeslaPackFamily::Model3YClass, 96).known());
+  for (uint16_t energy_x10 : {0, 1, 199, 620, 601, 649, 1001, 1023}) {
+    SCOPED_TRACE(energy_x10);
+    EXPECT_FALSE(tesla_module_grouping(TeslaPackFamily::Model3YClass, 96, false, energy_x10).known());
+  }
+  // Mid Range ~62 kWh is plausible but in the gap between SR and LR.
+  EXPECT_FALSE(tesla_module_grouping(TeslaPackFamily::Model3YClass, 96, false, 620).known());
+}
+
+TEST(TeslaModuleGroupingTest, Model3Y96LongRangeFromCapacityWhenNew) {
+  for (uint16_t energy_x10 : {650, 750, 821, 1000}) {
+    SCOPED_TRACE(energy_x10);
+    ModuleGrouping g = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96, false, energy_x10);
+    ASSERT_TRUE(g.known());
+    EXPECT_EQ(Sizes(g), (std::vector<uint8_t>{23, 25, 25, 23}));
+  }
+}
+
+TEST(TeslaModuleGroupingTest, Model3Y96StandardRangeFromCapacityWhenNew) {
+  for (uint16_t energy_x10 : {450, 500, 550, 600}) {
+    SCOPED_TRACE(energy_x10);
+    ModuleGrouping g = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96, false, energy_x10);
+    ASSERT_TRUE(g.known());
+    EXPECT_EQ(Sizes(g), (std::vector<uint8_t>{24, 24, 24, 24}));
+  }
 }
 
 TEST(TeslaModuleGroupingTest, NonMatchingCountsAreUnknown) {
@@ -240,6 +275,49 @@ TEST_F(TeslaModuleGroupingBatteryTest, Pack96StaysUnknown) {
   EXPECT_EQ(Json(grouping()), "[]");
 }
 
+TEST_F(TeslaModuleGroupingBatteryTest, Pack96LongRangeWhenCapacityArrivesLate) {
+  TeslaBattery pack;
+  pack.setup();
+  ScanFullFrames(&pack, 31);
+  ASSERT_FALSE(grouping().known());
+  pack.handle_incoming_can_frame(EnergyWhenNewFrame(821));  // 82.1 kWh, as in tesla_can.log
+  EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{23, 25, 25, 23}));
+  EXPECT_EQ(Json(grouping()), "[23,25,25,23]");
+}
+
+TEST_F(TeslaModuleGroupingBatteryTest, Pack96StandardRangeFromCapacityWhenNew) {
+  TeslaBattery pack;
+  pack.setup();
+  ScanFullFrames(&pack, 31);
+  pack.handle_incoming_can_frame(EnergyWhenNewFrame(500));
+  EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{24, 24, 24, 24}));
+}
+
+TEST_F(TeslaModuleGroupingBatteryTest, Pack96MidRangeAndImplausibleStayUnknown) {
+  TeslaBattery pack;
+  pack.setup();
+  ScanFullFrames(&pack, 31);
+  pack.handle_incoming_can_frame(EnergyWhenNewFrame(620));  // Mid Range ~62 kWh
+  EXPECT_FALSE(grouping().known());
+  for (uint16_t energy_x10 : {0, 1, 1023}) {
+    SCOPED_TRACE(energy_x10);
+    pack.handle_incoming_can_frame(EnergyWhenNewFrame(energy_x10));
+    EXPECT_FALSE(grouping().known());
+  }
+}
+
+TEST_F(TeslaModuleGroupingBatteryTest, Pack96GroupingFollowsACapacityChange) {
+  TeslaBattery pack;
+  pack.setup();
+  ScanFullFrames(&pack, 31);
+  pack.handle_incoming_can_frame(EnergyWhenNewFrame(500));
+  EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{24, 24, 24, 24}));
+  pack.handle_incoming_can_frame(EnergyWhenNewFrame(821));
+  EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{23, 25, 25, 23}));
+  pack.handle_incoming_can_frame(EnergyWhenNewFrame(1));  // implausible: ungroup
+  EXPECT_FALSE(grouping().known());
+}
+
 TEST_F(TeslaModuleGroupingBatteryTest, Pack106) {
   TeslaBattery pack;
   pack.setup();
@@ -256,13 +334,15 @@ TEST_F(TeslaModuleGroupingBatteryTest, Pack108) {
   EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{26, 28, 28, 26}));
 }
 
-TEST_F(TeslaModuleGroupingBatteryTest, ModelYChassis96AlsoStaysUnknown) {
+TEST_F(TeslaModuleGroupingBatteryTest, ModelYChassis96UsesTheSameCapacityTables) {
   user_selected_tesla_GTW_chassisType = 3;
   TeslaBattery pack;
   pack.setup();
   ScanFullFrames(&pack, 31);
   EXPECT_EQ(datalayer.battery.info.number_of_cells, 96);
   EXPECT_FALSE(grouping().known());
+  pack.handle_incoming_can_frame(EnergyWhenNewFrame(821));
+  EXPECT_EQ(Sizes(grouping()), (std::vector<uint8_t>{23, 25, 25, 23}));
 }
 
 TEST_F(TeslaModuleGroupingBatteryTest, UnexpectedCountsStayUnknown) {
@@ -299,6 +379,7 @@ TEST_F(TeslaModuleGroupingBatteryTest, ModelSXChassisHasNoGrouping) {
       pack.setup();
       ScanFullFrames(&pack, last_mux);
       EXPECT_EQ(datalayer.battery.info.number_of_cells, last_mux == 31 ? 96 : 108);
+      pack.handle_incoming_can_frame(EnergyWhenNewFrame(821));
       EXPECT_FALSE(grouping().known());
     }
   }

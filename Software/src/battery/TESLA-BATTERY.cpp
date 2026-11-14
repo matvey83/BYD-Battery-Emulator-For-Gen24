@@ -1765,9 +1765,13 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         const uint16_t legacy_bol_x10 = ((rx_frame.data.u8[6] & 0x03) << 8) | rx_frame.data.u8[5];  //40|10@1+ kWh
         bol_0x292_x10 = legacy_bol_x10;
         bol_0x292_seen = true;
-        if (energy_x10_plausible_10bit(legacy_bol_x10) && battery_beginning_of_life_source != SohReferenceNewFw) {
+        if (energy_x10_plausible_10bit(legacy_bol_x10) && battery_beginning_of_life_source != SohReferenceNewFw &&
+            battery_beginning_of_life != legacy_bol_x10) {
           battery_beginning_of_life = legacy_bol_x10;
           battery_beginning_of_life_source = SohReferenceLegacyFw;
+          if (!bol_0x392_seen) {
+            update_module_grouping();
+          }
         }
       }
       battery_soc_min = (((rx_frame.data.u8[1] & 0x03) << 8) | rx_frame.data.u8[0]);  //0|10@1+ (0.1,0) [0|102.3] "%"
@@ -1795,11 +1799,15 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
              (rx_frame.data.u8[3]));  //24|10@1+ (0.1,375) "V" up to 2022.45.15, (1,300) from 2023.2.12
         // Full pack energy when new, 40|10@1+ (0.1,0) kWh, not in the public DBC. Wins over 0x292 whenever plausible.
         const uint16_t new_fw_bol_x10 = ((rx_frame.data.u8[6] & 0x03) << 8) | rx_frame.data.u8[5];
+        const bool bol_changed = !bol_0x392_seen || bol_0x392_x10 != new_fw_bol_x10;
         bol_0x392_x10 = new_fw_bol_x10;
         bol_0x392_seen = true;
         if (energy_x10_plausible_10bit(new_fw_bol_x10)) {
           battery_beginning_of_life = new_fw_bol_x10;
           battery_beginning_of_life_source = SohReferenceNewFw;
+        }
+        if (bol_changed) {
+          update_module_grouping();
         }
       }
       if (mux == 0) {
