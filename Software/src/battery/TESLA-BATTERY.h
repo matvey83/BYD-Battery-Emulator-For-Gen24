@@ -140,11 +140,12 @@ class TeslaBattery : public CanBattery {
  private:
   TeslaHtmlRenderer renderer;
 
-  // Call whenever number_of_cells changes
+  // Call whenever number_of_cells or capacity-when-new changes. Display-only.
   void update_module_grouping() {
     datalayer_battery->info.module_grouping =
         tesla_module_grouping(TeslaPackFamily::Model3YClass, datalayer_battery->info.number_of_cells,
-                              user_selected_tesla_GTW_chassisType <= 1);  // 0 Model S, 1 Model X
+                              user_selected_tesla_GTW_chassisType <= 1,  // 0 Model S, 1 Model X
+                              bol_0x392_seen ? bol_0x392_x10 : battery_beginning_of_life);
   }
 
   // OBSOLETE fallback: total capacity from the user selected GTW pack energy (50/74/62/100 kWh), set once in setup().
