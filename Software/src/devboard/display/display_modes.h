@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../datalayer/module_grouping.h"
+
 // OLED page selected in Settings. Stored as NVM uint8 DISPMODE.
 // 0 Status (today's tall SOC and rotating pages), 1 Health, 2 Cell bars, 3 Cycle.
 // A missing key uses DISPLAY_MODE_DEFAULT_RAW. Any other stored value is Status too.
@@ -249,32 +251,25 @@ inline void format_health(const HealthInputs& in, HealthRows& rows) {
   health_pad(rows.line[7], "");
 }
 
-// Cell bars. One column per cell on the 56px under the text row, centered in 128.
-// A valid bar is at least 2px. A missing cell (0 mV) is a 1px dot, never a bar.
-static constexpr uint16_t CELL_BAR_MIN_SPAN_MV = 20;
+// Cell bars. One 1px column per cell on the 56px under the text row, centered in 128.
+// Heights use the website cell monitor scale (200px chart: lo = min - 20mV,
+// sc = 180 / (delta + 40), height = (mV - lo) * sc + 20), shrunk to 56px. The 10% floor
+// (+20 of 200) is intentional so only the gaps between module groups ever read as 0
+// height. No cell bar should ever be drawn at or near 0. A 0 mV cell is excluded from
+// min/max and stays a 2px stub. A blank column in the bar strip is only a module gap
+// (plus leftover side padding).
+// Gaps are 1px and come from ModuleGrouping, the same tables as the web cell monitor:
+// only when the brick count exactly matches a known layout. If the bars plus gaps
+// would exceed 128px, the gaps are dropped and the cells stay packed.
 static constexpr uint8_t CELL_BAR_PX = 56;
-static constexpr uint8_t CELL_BAR_DOT_PX = 1;
 static constexpr uint8_t CELL_BAR_MIN_PX = 2;
 static constexpr uint16_t CELL_BAR_MAX_CELLS = 128;
-
-// Legacy S/X modules are 6 bricks. 96 and 84 are exact module counts; 83 is not.
-// 3/Y 96 is either 4x24 or 23+25+25+23, and 108 LFP has no single verified module
-// order, so a 3/Y cell count alone does not get gaps. Plaid 110 is not grouped.
-enum class CellPackFamily : uint8_t { Unknown = 0, TeslaLegacySX = 1, Tesla3Y = 2 };
-
-inline uint8_t equal_module_bricks(CellPackFamily family, uint16_t cells) {
-  if (family == CellPackFamily::TeslaLegacySX && (cells == 96 || cells == 84)) {
-    return 6;
-  }
-  return 0;
-}
 
 struct CellScale {
   bool have = false;
   uint16_t min_mV = 0;
   uint16_t max_mV = 0;
-  uint16_t lo_mV = 0;
-  uint16_t span_mV = CELL_BAR_MIN_SPAN_MV;
+  uint32_t range_mV = 40;  // delta + 40, as on the web chart
 };
 
 inline CellScale cell_voltage_scale(const uint16_t* mv, uint16_t count) {
@@ -304,61 +299,67 @@ inline CellScale cell_voltage_scale(const uint16_t* mv, uint16_t count) {
   scale.have = true;
   scale.min_mV = min_mV;
   scale.max_mV = max_mV;
-  const uint16_t delta = (uint16_t)(max_mV - min_mV);
-  scale.span_mV = delta < CELL_BAR_MIN_SPAN_MV ? CELL_BAR_MIN_SPAN_MV : delta;
-  const uint16_t pad = (uint16_t)((scale.span_mV - delta) / 2u);
-  scale.lo_mV = pad > min_mV ? 0 : (uint16_t)(min_mV - pad);
+  scale.range_mV = (uint32_t)(max_mV - min_mV) + 40u;
   return scale;
 }
 
+// Web height in a 200px chart, ((mv - min + 20) * 180 / range + 20), scaled to 56px:
+//   ((mv - min + 20) * 180 + 20 * range) * 56 / (range * 200). The 10% floor (+20 of 200)
+//   is intentional so only the gaps between module groups ever read as 0 height. No cell
+//   bar should ever be drawn at or near 0. Cap at 56 if rounding needs it. A 0 mV cell
+//   stays a 2px stub.
 inline uint8_t cell_bar_height(uint16_t mv, const CellScale& scale) {
-  if (!scale.have || mv == 0) {
-    return CELL_BAR_DOT_PX;
+  if (!scale.have) {
+    return 0;
   }
-  const uint16_t above = mv > scale.lo_mV ? (uint16_t)(mv - scale.lo_mV) : 0;
-  uint32_t height = (uint32_t)above * (CELL_BAR_PX - CELL_BAR_MIN_PX) / scale.span_mV + CELL_BAR_MIN_PX;
-  if (height < CELL_BAR_MIN_PX) {
-    height = CELL_BAR_MIN_PX;
+  if (mv == 0) {
+    return CELL_BAR_MIN_PX;
   }
+  const uint32_t above = (uint32_t)mv + 20u > scale.min_mV ? (uint32_t)mv + 20u - scale.min_mV : 0u;
+  const uint32_t range = scale.range_mV == 0 ? 40u : scale.range_mV;
+  uint32_t height = (above * 180u + 20u * range) * CELL_BAR_PX / (range * 200u);
   if (height > CELL_BAR_PX) {
     height = CELL_BAR_PX;
   }
   return (uint8_t)height;
 }
 
-// column[x] is 0 (empty, including a module gap), 1 (missing cell) or 2..56 (bar).
+// column[x] is 0 (side padding or a 1px module gap) or a cell bar
+// (2px stub if 0 mV, else the web scale).
 // False when there is no valid cell to scale against.
-inline bool layout_cell_bars(CellPackFamily family, const uint16_t* mv, uint16_t count, uint8_t column[128]) {
+inline bool layout_cell_bars(const ModuleGrouping& grouping, const uint16_t* mv, uint16_t count, uint8_t column[128]) {
   memset(column, 0, 128);
   if (mv == nullptr || count == 0) {
     return false;
   }
   const uint16_t n = count > CELL_BAR_MAX_CELLS ? CELL_BAR_MAX_CELLS : count;
-  const CellPackFamily use_family = count > CELL_BAR_MAX_CELLS ? CellPackFamily::Unknown : family;
   const CellScale scale = cell_voltage_scale(mv, n);
   if (!scale.have) {
     return false;
   }
 
-  uint8_t bricks = equal_module_bricks(use_family, n);
   uint16_t gaps = 0;
-  if (bricks >= 2 && (n % bricks) == 0) {
-    gaps = (uint16_t)(n / bricks - 1u);
+  const bool grouped = count <= CELL_BAR_MAX_CELLS && grouping.known() && grouping.module_count >= 2 &&
+                       grouping.brick_total() == n;
+  if (grouped) {
+    gaps = (uint16_t)(grouping.module_count - 1);
     if ((uint16_t)(n + gaps) > 128) {
-      bricks = 0;
       gaps = 0;
     }
-  } else {
-    bricks = 0;
   }
 
   uint16_t x = (uint16_t)((128u - (n + gaps)) / 2u);
+  uint8_t module_i = 0;
+  uint8_t taken = 0;
   for (uint16_t i = 0; i < n; i++) {
-    if (bricks != 0 && i > 0 && (i % bricks) == 0) {
+    if (gaps != 0 && taken == grouping.bricks_in_module[module_i]) {
       x++;
+      module_i++;
+      taken = 0;
     }
-    column[x] = mv[i] == 0 ? CELL_BAR_DOT_PX : cell_bar_height(mv[i], scale);
+    column[x] = cell_bar_height(mv[i], scale);
     x++;
+    taken++;
   }
   return true;
 }
@@ -381,13 +382,13 @@ struct CellHold {
   bool known = false;
   uint32_t ms = 0;
   uint16_t count = 0;
-  CellPackFamily family = CellPackFamily::Unknown;
+  ModuleGrouping grouping{};
   uint16_t mv[CELL_BAR_MAX_CELLS]{};
 };
 
 // A live sample needs one non-zero cell. After that the same columns stay up for 30 minutes.
-inline bool cell_hold_step(CellHold& hold, bool live, CellPackFamily family, const uint16_t* mv, uint16_t count,
-                           uint32_t now_ms) {
+inline bool cell_hold_step(CellHold& hold, bool live, const ModuleGrouping& grouping, const uint16_t* mv,
+                           uint16_t count, uint32_t now_ms) {
   const uint16_t n = count > CELL_BAR_MAX_CELLS ? CELL_BAR_MAX_CELLS : count;
   bool sample = false;
   if (live && mv != nullptr && n > 0) {
@@ -402,7 +403,7 @@ inline bool cell_hold_step(CellHold& hold, bool live, CellPackFamily family, con
     hold.known = true;
     hold.ms = now_ms;
     hold.count = n;
-    hold.family = count > CELL_BAR_MAX_CELLS ? CellPackFamily::Unknown : family;
+    hold.grouping = count > CELL_BAR_MAX_CELLS ? ModuleGrouping() : grouping;
     memcpy(hold.mv, mv, n * sizeof(uint16_t));
     return true;
   }
@@ -411,6 +412,7 @@ inline bool cell_hold_step(CellHold& hold, bool live, CellPackFamily family, con
   }
   hold.known = false;
   hold.count = 0;
+  hold.grouping = ModuleGrouping();
   return false;
 }
 
