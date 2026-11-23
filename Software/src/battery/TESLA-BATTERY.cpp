@@ -1714,6 +1714,7 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
           mux_zero_counter++;
           if (mux_zero_counter == 2u) {
             datalayer_battery->info.number_of_cells = 2 + 3 * mux_max + 1;
+            update_module_grouping();
             mux_zero_counter++;
           }
         }
@@ -1724,6 +1725,7 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 
         // This is always the last frame in the sequence, so total cells = mux*3 + 1
         datalayer_battery->info.number_of_cells = mux * 3 + 1;
+        update_module_grouping();
       }
       break;
     case 0x2d2:  //BMSVAlimits:  (tesla-m3-pack-findings fw 2019.20.4.2 names 0x2D2 = BMS_driveLimits)
@@ -1798,6 +1800,10 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         if (energy_x10_plausible_10bit(new_fw_bol_x10)) {
           battery_beginning_of_life = new_fw_bol_x10;
           battery_beginning_of_life_source = SohReferenceNewFw;
+        }
+        if (battery_energy_when_new_x10 != new_fw_bol_x10) {
+          battery_energy_when_new_x10 = new_fw_bol_x10;
+          update_module_grouping();
         }
       }
       if (mux == 0) {
@@ -3136,6 +3142,7 @@ void TeslaBattery::printFaultCodesPcsCp() {
 }
 
 void TeslaBattery::setup(void) {  // Performs one time setup at startup
+  update_module_grouping();
 
   if (allows_contactor_closing) {
     *allows_contactor_closing = true;
