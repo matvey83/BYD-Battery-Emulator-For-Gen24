@@ -339,8 +339,8 @@ inline bool layout_cell_bars(const ModuleGrouping& grouping, const uint16_t* mv,
   }
 
   uint16_t gaps = 0;
-  const bool grouped = count <= CELL_BAR_MAX_CELLS && grouping.known() && grouping.module_count >= 2 &&
-                       grouping.brick_total() == n;
+  const bool grouped =
+      count <= CELL_BAR_MAX_CELLS && grouping.known() && grouping.module_count >= 2 && grouping.brick_total() == n;
   if (grouped) {
     gaps = (uint16_t)(grouping.module_count - 1);
     if ((uint16_t)(n + gaps) > 128) {
