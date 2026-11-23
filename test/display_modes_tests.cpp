@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <cstring>
+#include <vector>
 
+#include "../Software/src/battery/TESLA-MODULES.h"
 #include "../Software/src/devboard/display/display_modes.h"
 
 namespace {
@@ -12,6 +14,61 @@ void expect_row(const char* row, const char* text) {
   for (size_t i = std::strlen(text); i < 21; i++) {
     EXPECT_EQ(row[i], ' ') << text;
   }
+}
+
+// Expected 1px gap column indexes for a 128px-centered strip of n cells plus grouping gaps.
+std::vector<int> expected_gap_xs(uint16_t n, const ModuleGrouping& grouping) {
+  std::vector<int> gaps;
+  if (!grouping.known() || grouping.module_count < 2 || grouping.brick_total() != n) {
+    return gaps;
+  }
+  const uint16_t gap_count = (uint16_t)(grouping.module_count - 1);
+  if ((uint16_t)(n + gap_count) > 128) {
+    return gaps;
+  }
+  int x = (int)((128u - (n + gap_count)) / 2u);
+  uint16_t taken = 0;
+  uint8_t module_i = 0;
+  for (uint16_t i = 0; i < n; i++) {
+    if (taken == grouping.bricks_in_module[module_i]) {
+      gaps.push_back(x);
+      x++;
+      module_i++;
+      taken = 0;
+    }
+    x++;
+    taken++;
+  }
+  return gaps;
+}
+
+void expect_layout(const ModuleGrouping& grouping, const uint16_t* mv, uint16_t n, const uint8_t column[128]) {
+  const auto gaps = expected_gap_xs(n, grouping);
+  const uint16_t width = (uint16_t)(n + gaps.size());
+  const int origin = (int)((128u - width) / 2u);
+  const int end = origin + (int)width;
+  size_t gi = 0;
+  uint16_t cell_i = 0;
+  for (int x = 0; x < 128; x++) {
+    const bool is_gap = gi < gaps.size() && x == gaps[gi];
+    if (is_gap) {
+      EXPECT_EQ(column[x], 0) << "gap at " << x;
+      gi++;
+      continue;
+    }
+    if (x >= origin && x < end) {
+      if (mv[cell_i] == 0) {
+        EXPECT_EQ(column[x], CELL_BAR_DOT_PX) << "missing cell at " << x;
+      } else {
+        EXPECT_GT(column[x], CELL_BAR_DOT_PX) << "cell at " << x;
+      }
+      cell_i++;
+    } else {
+      EXPECT_EQ(column[x], 0) << "padding at " << x;
+    }
+  }
+  EXPECT_EQ(gi, gaps.size());
+  EXPECT_EQ(cell_i, n);
 }
 
 }  // namespace
@@ -262,54 +319,111 @@ TEST(CellBarTests, ExactMinimumSpanUsesTheFullColumn) {
   EXPECT_EQ(cell_bar_height(3932, scale), CELL_BAR_PX);
 }
 
-TEST(CellBarTests, ColumnsAreCenteredWithNoGaps) {
+TEST(CellBarTests, GapsOnlyWhenTheModuleLayoutIsExact) {
   uint16_t mv[128];
   for (int i = 0; i < 128; i++) {
     mv[i] = 4000;
   }
   uint8_t column[128];
 
-  auto expect_centered = [&](uint16_t count, uint16_t origin) {
-    ASSERT_TRUE(layout_cell_bars(mv, count, column));
-    if (origin > 0) {
-      EXPECT_EQ(column[origin - 1], 0);
-    }
-    for (uint16_t x = origin; x < origin + count; x++) {
-      EXPECT_GT(column[x], CELL_BAR_DOT_PX) << x;
-    }
-    if (origin + count < 128) {
-      EXPECT_EQ(column[origin + count], 0);
-    }
-  };
+  const auto legacy96 = tesla_module_grouping(TeslaPackFamily::LegacySX, 96);
+  ASSERT_TRUE(layout_cell_bars(legacy96, mv, 96, column));
+  // 16 modules of 6, 15 gaps, width 111, origin 8.
+  EXPECT_EQ(legacy96.module_count, 16);
+  EXPECT_EQ(column[8 + 6], 0);
+  expect_layout(legacy96, mv, 96, column);
 
-  expect_centered(96, 16);
-  expect_centered(84, 22);
-  expect_centered(83, 22);
-  expect_centered(108, 10);
-  expect_centered(110, 9);
+  const auto legacy84 = tesla_module_grouping(TeslaPackFamily::LegacySX, 84);
+  ASSERT_TRUE(layout_cell_bars(legacy84, mv, 84, column));
+  expect_layout(legacy84, mv, 84, column);
+
+  const auto legacy83 = tesla_module_grouping(TeslaPackFamily::LegacySX, 83);
+  EXPECT_FALSE(legacy83.known());
+  ASSERT_TRUE(layout_cell_bars(legacy83, mv, 83, column));
+  expect_layout(legacy83, mv, 83, column);
+
+  // 96-brick 3/Y stays ungrouped: brick count cannot tell 23+25+25+23 from 4x24.
+  const auto y96_unknown = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96);
+  EXPECT_FALSE(y96_unknown.known());
+  ASSERT_TRUE(layout_cell_bars(y96_unknown, mv, 96, column));
+  expect_layout(y96_unknown, mv, 96, column);
+
+  // The 23+25+25+23 layout still fits (width 99, origin 14) when grouping is known.
+  const uint8_t y96_lr_sizes[] = {23, 25, 25, 23};
+  const auto y96 = ModuleGrouping::from_sizes(y96_lr_sizes, 4, 96);
+  ASSERT_TRUE(layout_cell_bars(y96, mv, 96, column));
+  EXPECT_EQ(column[14 + 23], 0);
+  expect_layout(y96, mv, 96, column);
+
+  const auto y106 = tesla_module_grouping(TeslaPackFamily::Model3YClass, 106);
+  ASSERT_TRUE(layout_cell_bars(y106, mv, 106, column));
+  expect_layout(y106, mv, 106, column);
+
+  const auto y108 = tesla_module_grouping(TeslaPackFamily::Model3YClass, 108);
+  ASSERT_TRUE(layout_cell_bars(y108, mv, 108, column));
+  expect_layout(y108, mv, 108, column);
+
+  const auto unknown110 = ModuleGrouping();
+  ASSERT_TRUE(layout_cell_bars(unknown110, mv, 110, column));
+  expect_layout(unknown110, mv, 110, column);
+
+  const auto sx96 = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96, true);
+  EXPECT_FALSE(sx96.known());
+  ASSERT_TRUE(layout_cell_bars(sx96, mv, 96, column));
+  expect_layout(sx96, mv, 96, column);
 
   mv[3] = 0;
-  ASSERT_TRUE(layout_cell_bars(mv, 96, column));
-  EXPECT_EQ(column[16 + 3], CELL_BAR_DOT_PX);
-  EXPECT_GT(column[16], CELL_BAR_DOT_PX);
+  ASSERT_TRUE(layout_cell_bars(y96, mv, 96, column));
+  // A 0 mV cell stays a 1px dot, not a blank gap.
+  EXPECT_EQ(column[14 + 3], CELL_BAR_DOT_PX);
+  EXPECT_GT(column[14], CELL_BAR_DOT_PX);
+  EXPECT_EQ(column[14 + 23], 0);
+  expect_layout(y96, mv, 96, column);
+
+  // Grouping that does not add up to the brick count is ignored.
+  const uint8_t bad_sizes[] = {23, 25, 25, 22};
+  const auto mismatched = ModuleGrouping::from_sizes(bad_sizes, 4, 96);
+  EXPECT_FALSE(mismatched.known());
+  ASSERT_TRUE(layout_cell_bars(mismatched, mv, 96, column));
+  expect_layout(mismatched, mv, 96, column);
+}
+
+TEST(CellBarTests, GapsDroppedWhenTheyWouldNotFit) {
+  uint16_t mv[128];
+  for (int i = 0; i < 128; i++) {
+    mv[i] = 4000;
+  }
+  uint8_t column[128];
+  const uint8_t sizes[] = {64, 64};
+  const auto grouping = ModuleGrouping::from_sizes(sizes, 2, 128);
+  ASSERT_TRUE(grouping.known());
+  ASSERT_TRUE(layout_cell_bars(grouping, mv, 128, column));
+  // 128 cells + 1 gap would be 129px, so the gap is dropped and every column is a bar.
+  for (int x = 0; x < 128; x++) {
+    EXPECT_GT(column[x], CELL_BAR_DOT_PX) << x;
+  }
 }
 
 TEST(CellBarTests, MissingPackAndThirtyMinuteHold) {
   uint8_t column[128] = {};
   const uint16_t zeros[8] = {};
-  EXPECT_FALSE(layout_cell_bars(zeros, 8, column));
-  EXPECT_FALSE(layout_cell_bars(nullptr, 0, column));
+  const auto y96 = tesla_module_grouping(TeslaPackFamily::Model3YClass, 96);
+  EXPECT_FALSE(layout_cell_bars(y96, zeros, 8, column));
+  EXPECT_FALSE(layout_cell_bars(ModuleGrouping(), nullptr, 0, column));
 
   CellHold hold{};
   const uint16_t cells[] = {3912, 3930, 0, 3920};
-  EXPECT_TRUE(cell_hold_step(hold, true, cells, 4, 50));
+  const auto legacy96 = tesla_module_grouping(TeslaPackFamily::LegacySX, 96);
+  EXPECT_TRUE(cell_hold_step(hold, true, legacy96, cells, 4, 50));
   EXPECT_EQ(hold.count, 4u);
-  EXPECT_TRUE(cell_hold_step(hold, false, nullptr, 0, 50 + DISPLAY_VALUE_HOLD_MS));
+  EXPECT_EQ(hold.grouping.module_count, legacy96.module_count);
+  EXPECT_TRUE(cell_hold_step(hold, false, ModuleGrouping(), nullptr, 0, 50 + DISPLAY_VALUE_HOLD_MS));
   EXPECT_TRUE(hold.known);
   EXPECT_EQ(hold.mv[1], 3930);
-  EXPECT_FALSE(cell_hold_step(hold, false, nullptr, 0, 50 + DISPLAY_VALUE_HOLD_MS + 1));
+  EXPECT_FALSE(cell_hold_step(hold, false, ModuleGrouping(), nullptr, 0, 50 + DISPLAY_VALUE_HOLD_MS + 1));
   EXPECT_FALSE(hold.known);
   EXPECT_EQ(hold.count, 0u);
+  EXPECT_FALSE(hold.grouping.known());
 }
 
 TEST(HealthFormatTests, HoldSurvivesMillisWrap) {

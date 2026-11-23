@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../datalayer/module_grouping.h"
+
 // OLED page selected in Settings. Stored as NVM uint8 DISPMODE.
 // 0 Status (today's tall SOC and rotating pages), 1 Health, 2 Cell bars, 3 Cycle.
 // A missing key or any other value is Status.
@@ -253,6 +255,9 @@ inline void format_health(const HealthInputs& in, HealthRows& rows) {
 
 // Cell bars. One column per cell on the 56px under the text row, centered in 128.
 // A valid bar is at least 2px. A missing cell (0 mV) is a 1px dot, never a bar.
+// 1px gaps come from ModuleGrouping (the same tables as the web cell monitor),
+// and only when the brick count matches a known layout. If bars plus gaps would
+// exceed 128px, the gaps are dropped and the cells stay packed.
 static constexpr uint16_t CELL_BAR_MIN_SPAN_MV = 20;
 static constexpr uint8_t CELL_BAR_PX = 56;
 static constexpr uint8_t CELL_BAR_DOT_PX = 1;
@@ -316,9 +321,9 @@ inline uint8_t cell_bar_height(uint16_t mv, const CellScale& scale) {
   return (uint8_t)height;
 }
 
-// column[x] is 0 (empty padding), 1 (missing cell) or 2..56 (bar).
+// column[x] is 0 (side padding or a 1px module gap), 1 (missing cell) or 2..56 (bar).
 // False when there is no valid cell to scale against.
-inline bool layout_cell_bars(const uint16_t* mv, uint16_t count, uint8_t column[128]) {
+inline bool layout_cell_bars(const ModuleGrouping& grouping, const uint16_t* mv, uint16_t count, uint8_t column[128]) {
   memset(column, 0, 128);
   if (mv == nullptr || count == 0) {
     return false;
@@ -329,9 +334,28 @@ inline bool layout_cell_bars(const uint16_t* mv, uint16_t count, uint8_t column[
     return false;
   }
 
-  uint16_t x = (uint16_t)((128u - n) / 2u);
-  for (uint16_t i = 0; i < n; i++, x++) {
+  uint16_t gaps = 0;
+  const bool grouped =
+      count <= CELL_BAR_MAX_CELLS && grouping.known() && grouping.module_count >= 2 && grouping.brick_total() == n;
+  if (grouped) {
+    gaps = (uint16_t)(grouping.module_count - 1);
+    if ((uint16_t)(n + gaps) > 128) {
+      gaps = 0;
+    }
+  }
+
+  uint16_t x = (uint16_t)((128u - (n + gaps)) / 2u);
+  uint8_t module_i = 0;
+  uint8_t taken = 0;
+  for (uint16_t i = 0; i < n; i++) {
+    if (gaps != 0 && taken == grouping.bricks_in_module[module_i]) {
+      x++;
+      module_i++;
+      taken = 0;
+    }
     column[x] = mv[i] == 0 ? CELL_BAR_DOT_PX : cell_bar_height(mv[i], scale);
+    x++;
+    taken++;
   }
   return true;
 }
@@ -354,11 +378,13 @@ struct CellHold {
   bool known = false;
   uint32_t ms = 0;
   uint16_t count = 0;
+  ModuleGrouping grouping{};
   uint16_t mv[CELL_BAR_MAX_CELLS]{};
 };
 
 // A live sample needs one non-zero cell. After that the same columns stay up for 30 minutes.
-inline bool cell_hold_step(CellHold& hold, bool live, const uint16_t* mv, uint16_t count, uint32_t now_ms) {
+inline bool cell_hold_step(CellHold& hold, bool live, const ModuleGrouping& grouping, const uint16_t* mv,
+                           uint16_t count, uint32_t now_ms) {
   const uint16_t n = count > CELL_BAR_MAX_CELLS ? CELL_BAR_MAX_CELLS : count;
   bool sample = false;
   if (live && mv != nullptr && n > 0) {
@@ -373,6 +399,7 @@ inline bool cell_hold_step(CellHold& hold, bool live, const uint16_t* mv, uint16
     hold.known = true;
     hold.ms = now_ms;
     hold.count = n;
+    hold.grouping = count > CELL_BAR_MAX_CELLS ? ModuleGrouping() : grouping;
     memcpy(hold.mv, mv, n * sizeof(uint16_t));
     return true;
   }
@@ -381,6 +408,7 @@ inline bool cell_hold_step(CellHold& hold, bool live, const uint16_t* mv, uint16
   }
   hold.known = false;
   hold.count = 0;
+  hold.grouping = ModuleGrouping();
   return false;
 }
 
